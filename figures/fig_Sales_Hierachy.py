@@ -1,3 +1,5 @@
+# This notebook will recreat figure 4 and 5 in the master thesis
+
 # Databricks notebook source
 import pandas as pd
 import matplotlib.pyplot as plt

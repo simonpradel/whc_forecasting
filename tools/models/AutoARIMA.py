@@ -1,9 +1,5 @@
 from statsforecast import StatsForecast
 from statsforecast.models import AutoARIMA
-import pandas as pd
-from typing import Tuple
-import signal
-import os
 
 def train_AutoARIMA_and_forecast(train_df, test_periods, freq, date_col = "ds", id_col = "unique_id", actuals_col= "y", set_index =True, enable_ensemble = True, eval_metric = "MAE", verbosity = 0, time_limit = 60 * 60 * 24, random_seed = 123):   
     """

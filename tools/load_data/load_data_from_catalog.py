@@ -1,16 +1,19 @@
 import os
 import sys
-from databricks.sdk.runtime import *
 from pyspark.sql.functions import lit
 import pandas as pd
 from pyspark.sql import DataFrame as SparkDataFrame
 from pyspark.sql.types import IntegerType, FloatType
 
 
-def load_data_from_catalog(data, datasetName=None, maindir = None):
 
+def load_data_from_catalog(data, datasetName=None, maindir = None):
+    print("hi")
+    from pyspark.sql import SparkSession
+    spark = SparkSession.builder.getOrCreate()
     if maindir == None:
         maindir = os.getcwd()
+        print(maindir)
 
     if data == "M5":
         current_dir = os.path.join(maindir, "data/datasets/m5_sales_long.csv")

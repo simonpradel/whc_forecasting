@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from itertools import combinations
 from hierarchicalforecast.utils import aggregate
-from databricks.sdk.runtime import *
 import copy
 
 def aggregate_by_levels(data, method='dictionary', exclude_variables=None, show_dict_infos=False):

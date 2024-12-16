@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd 
 
 def calculate_metric(df, column, metric, verbosity, test_period, future_periods):
@@ -6,14 +5,8 @@ def calculate_metric(df, column, metric, verbosity, test_period, future_periods)
     
     df = df.copy()  # Sicherstellen, dass an einer Kopie gearbeitet wird, um Warnungen zu vermeiden
 
-    df_extracted = df[['y', column]]
     df_actuals = df[['y', column]]
     # Entferne Nullwerte in der Spalte 'method', die als Forecast-Horizont dienen
-    #df_actuals = df_extracted.dropna(subset=["y"]) # includes actuals + pred
-    #df_pred = df_extracted.dropna(how='any', inplace=False) # only pred
-    #print("df_no_nan_method")
-    #print(df_actuals)
-    forecast_horizon_length = test_period
 
     # y_train sind alle vorherigen Werte in 'y' (außer den letzten 'forecast_horizon_length' Werten)
     y_train = df_actuals['y'].iloc[:-future_periods]
@@ -33,8 +26,6 @@ def calculate_metric(df, column, metric, verbosity, test_period, future_periods)
     else:
         y_test = df_pred_inc_oos['y']
         y_pred = df_pred_inc_oos[column]
-
-
 
     # Entferne Zeilen, bei denen y_pred NaN-Werte enthält
     non_nan_indices = y_pred.dropna().index
@@ -62,31 +53,8 @@ def calculate_metric(df, column, metric, verbosity, test_period, future_periods)
             print("y_test:\n", y_test)
             print("y_pred:\n", y_pred)
     
-    # MAE, MAPE, MSE, RMSE, MASE, RMSSE, SMAPE, WAPE
-    if metric == 'MAE':
-        true_deviation = y_test - y_pred
-        return abs(true_deviation).mean()
-
-    elif metric == 'MAPE':
-        #from sklearn.metrics import mean_absolute_percentage_error
-        from sktime.performance_metrics.forecasting import MeanAbsolutePercentageError
-        mape = MeanAbsolutePercentageError(y_test, y_pred)
-        return mape
-
-    elif metric == 'MSE':
-        #from sklearn.metrics import mean_squared_error
-        from sktime.performance_metrics.forecasting import MeanSquaredError
-        mse = MeanSquaredError(y_test, y_pred)
-        return(mse)
-
-    elif metric == 'RMSE':
-        #from sklearn.metrics import root_mean_squared_error 
-        from sktime.performance_metrics.forecasting import MeanSquaredError
-        rmse = MeanSquaredError(y_test, y_pred, square_root=True)
-        return(rmse)
-
-    elif metric == 'MASE':
-        #mase = np.mean(np.abs(y_pred - y_test)) / np.mean(np.abs(y_train[:-forecast_horizon_length] - y_train[forecast_horizon_length:]))
+    # MASE, RMSSE, SMAPE, WAPE
+    if metric == 'MASE':
         from sktime.performance_metrics.forecasting import MeanAbsoluteScaledError
         results = MeanAbsoluteScaledError()
         mase = results(y_test, y_pred, y_train=y_train)

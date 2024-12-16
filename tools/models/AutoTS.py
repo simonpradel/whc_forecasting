@@ -1,26 +1,6 @@
 import pandas as pd
 from autots import AutoTS
-from typing import Tuple
 from autots.models.model_list import model_lists
-import contextlib
-import sys
-import signal
-
-
-# Funktion zur Unterdrückung der Ausgabe
-@contextlib.contextmanager
-def suppress_output():
-    with open('/dev/null', 'w') as devnull:
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        sys.stdout = devnull
-        sys.stderr = devnull
-        try:
-            yield
-        finally:
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-
 
 #print(model_lists.keys())
 #print(model_lists.values())
@@ -172,7 +152,7 @@ def train_autots_and_forecast(train_df, test_period, freq, date_col = "ds", id_c
     
     if includeModels is None or includeModels == "":
         if(excludeModels != None):
-            model_list = [item for item in list_full if item not in exclude_model]
+            model_list = [item for item in list_full if item not in excludeModels]
         else:
             model_list = list_full
     else:
@@ -223,10 +203,6 @@ def train_autots_and_forecast(train_df, test_period, freq, date_col = "ds", id_c
 
     except TimeoutError as e:
         print(e)
-
-    finally:
-        # Deaktiviere den Alarm, falls das Training vorher beendet wird
-        signal.alarm(0)
 
     # Erstellen der Prognose
     prediction = model.predict(forecast_length = test_period, verbose=0)

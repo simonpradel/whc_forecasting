@@ -1,31 +1,22 @@
-This file explains the provided functions/tool used for the code which are aufgeteilgt in different folders. It explains it need and where its used
+This file explains the provided files used for the code which are aufgeteilgt in different folders. It explains it need and where its used
 
 combine_results: contains function that combine different results like actuals and reconciliation forecasts, weighted and forecasts etc. 
-- apply_hierarchical_mapping.py:
 - combine_actuals_and_reconciliations.py: Combine actuals with reconciliations forecasts IN modified_method_weighted_aggregation
 - combine_weightedForecast_and_reconciliation.py: Combine Weighted Forecast and Reconciliation IN modified_method_weighted_aggregation
 - combine_weights_and_forecasts.py: Combine the calculated weights with the forecast. The difficulty is that if multiple forecasts are done in weights and in 
 forecasts to combine them right because both can be created independently IN modified_method_weighted_aggregation
-- create_hierachical_lists.py: 
 
 evaluation: contains functions that evaluate results
 - calculate_metrics.py: Calculate metrics for a forecast when done for a validation period (Where actuals are available, mostly needed for master thesis) IN modified_method_weighted_aggregation
 
-explore_data: contains function that helps exploring results
-
 forecast: contaings functions which are related to forecasts in the testperiod and future periods 
-- calculate_average_forecast.py:
-- calculate_reoncilliation_top_level.py
-- calculate_weighted_forecast.py
-- combine_aggregation_methods.py:
-- combine_all_forecasts.py:
 - create_forecasts.py: create forecasts for the test_period IN modified_method_weighted_aggregation
-- load foercast.py: load calculated forecasts for test period IN modified_method_weighted_aggregation
 
 load_data: contains function to load data
 - load_data_from_catalog.py: load data from catalog IN modified_method_weighted_aggregation
 
 methods: contains function which doesnt belong to other criteria
+- get_function_args.py: a helper function, creates a dictionary with the function's parameters as keys and their corresponding argument values as values
 - split_data.py: split in train und test data IN modified_method_weighted_aggregation
 
 models: contains functions co forecast values for time series, used in "calculate_weights_forecast" to forecast in train period, and in "create_forecasts" to 
@@ -35,12 +26,15 @@ forecast in test period
 - AutoGluon.py: Model used IN create_forecasts, calculate_weights_forecast
 - AutoTS.py: Model used IN create_forecasts, calculate_weights_forecast
 
-plots: contains function that hepls exploring results
+paper_results: contains function to create the results shown in the paper
+- calc_different_metrics_across_datasets.py:  Calculate different metrics accross datasets and settings IN paper_tables.py
+- pivot_model_metrics.py: Creates a pivot table with the average values of a given metric IN paper_tables.py
+- rank_models_across_datasets.py: ranks models across datasets based on a performance metric IN paper_tables.py
+
 
 transfomrations: contains function that transform data 
 - aggregate_by_levels.py: Create aggregation based on different grouping variabls IN modified_method_weighted_aggregation
-- impute_ts.py:
-- old_prepare_concilliation_forecast.py
+- impute_ts.py: Adds missing monthly rows to DataFrames in a dictionary IN prepare_data.py
 - prepare_data.py: fill missing data, preprocess data IN modified_method_weighted_aggregation
 - transform_aggregated_data.py: this function is us used to transform transform_aggregated_data transform_long_to_dict or transform_dict_to_long IN modified_method_weighted_aggregation
 - transform_multiple_dict_to_long.py: This function is used to transform multiple dictionary into the long format (transform_dict_to_long) IN modified_method_weighted_aggregation
@@ -49,17 +43,7 @@ weights: contains function which are related to the calculated weights
 - calculate_weights.py: calculate weights based on forecasts done in the train period IN modified_method_weighted_aggregation
 - calculate_weights_forecast.py: Calculate Forecasts for the train period IN modified_method_weighted_aggregation
 - compare_weighted_forecasts.py: Sort the weights for later use IN modified_method_weighted_aggregation
-- get_best_weight.py
-- load_weights.py
 
-====================================================================================
-Dependency Tree
-modified_method_weighted_aggregation:
-- combine_actuals_and_reconciliations
-- combine_weightedForecast_and_reconciliation
-- combine_weights_and_forecasts
-- calculate_metrics
-- create_forecasts
-- foercast
-- load_data_from_catalog
-- 
+
+
+

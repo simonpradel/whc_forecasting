@@ -6,7 +6,9 @@
 
 from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id, dense_rank, row_number
 from pyspark.sql.window import Window
-
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.getOrCreate()
+    
 # Load the M5 dataset
 global_electricity_production = spark.sql("""
     SELECT * 

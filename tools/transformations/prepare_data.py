@@ -79,9 +79,9 @@ def add_missing_rows(df, freq):
     # Bestimme das Mindest- und Höchstdatum im DataFrame
     min_date = df_sorted['date'].min()
     max_date = df_sorted['date'].max()
-
+    print("date_range")
     date_range = pd.date_range(min_date, max_date, freq=freq)
-
+    print("date_range")
     # Erstelle ein leeres DataFrame zum Sammeln der aktualisierten Daten
     updated_rows = []
 

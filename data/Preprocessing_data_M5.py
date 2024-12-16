@@ -7,6 +7,8 @@
 from pyspark.sql.functions import col, expr, lit, array, posexplode, date_add, concat_ws, sum as spark_sum, row_number, dense_rank
 from pyspark.sql.types import IntegerType
 from pyspark.sql.window import Window
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.getOrCreate()
 
 # Load the M5 dataset
 m_5_sales = spark.sql("""

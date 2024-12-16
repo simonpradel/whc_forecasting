@@ -1,7 +1,8 @@
 import os
 import sys
 
-main_dir = "/Workspace/Users/simon.pradel@telefonicatgt.es/p-l_prediction/P&L_Prediction"
+main_dir = "C:/Users/simon/whc_forecasting"
+#main_dir = "/Workspace/Users/simon.pradel@telefonicatgt.es/p-l_prediction/P&L_Prediction"
 sys.path.append(os.path.abspath(main_dir))
 os.chdir(main_dir)
 
@@ -40,9 +41,7 @@ def run_model_aggregation(
     Die Pfade für Zwischenergebnisse und Endergebnisse werden übergeben, ebenso wie alle weiteren Parameter.
     """
     
-    import os
-    import sys
-    import pandas as pd      
+    import os    
     import itertools
 
     ###############################################################################################
@@ -58,6 +57,9 @@ def run_model_aggregation(
     from datetime import datetime
     from dateutil.relativedelta import relativedelta
 
+    if verbosity >= 1:
+        print("Set cutoff")
+        
     if (cutoff_date == None):
         # Heutiges Datum
         today = datetime.today()
@@ -75,7 +77,7 @@ def run_model_aggregation(
 
         # Formatierung in 'YYYY-MM-DD'
         cutoff_date = last_day_last_month.strftime('%Y-%m-%d')
-    
+
     ###############################################################################################
     # prepare data
     ###############################################################################################
@@ -90,11 +92,11 @@ def run_model_aggregation(
     pkl_filename = f"data_{dataset_name}.pkl"
     pkl_filename = os.path.join(save_intermediate_results_path, pkl_filename)  # Vollständigen Pfad erstellen
 
-    load_data_from_catalog = False
-    save_data = False #'DONT CHANGE TO TRUE' UNLESS YOU WANT TO OVERWRITE THE DATA
-
+    load_data_from_saved_file = False
+    save_data = True #'DONT CHANGE TO TRUE' UNLESS YOU WANT TO OVERWRITE THE DATA
+        
     # Datei laden
-    if load_data_from_catalog == False:
+    if load_data_from_saved_file == True:
         with open(pkl_filename, 'rb') as f:
             loaded_data = pickle.load(f)
 
@@ -104,14 +106,16 @@ def run_model_aggregation(
         test_dic = loaded_data['test_dic']
     else:
         # Laden der Daten aus dem Katalog
+        if verbosity >= 1:
+            print("load_data_from_catalog")
         load_data = load_data_from_catalog(dataset_name, maindir = None)
-
         # Vorbereitung der Daten (Schließen von Lücken in den Daten)
+        if verbosity >= 1:
+            print("prepare_data")
         data = prepare_data(load_data, cutoff_date=cutoff_date, fill_missing_rows=True)
 
-        # Kopieren der vorbereiteten Daten
-        prepared_data = data["pandas_df"].copy()
-        
+        if verbosity >= 1:
+            print("aggregate_by_levels")
         # Aggregieren der Daten auf verschiedenen Ebenen und Umwandlung in Dictionary
         aggregated_data_dict = aggregate_by_levels(data=data, method='dictionary', show_dict_infos=False)
 
@@ -364,11 +368,6 @@ def run_model_aggregation(
         except Exception as e:
             print(f"Error loading {file_name}: {e}")
 
-    # input_filename = os.path.join(forecasts_path, 'forecast_results.pkl')
-    # with open(input_filename, 'rb') as f:
-    #     forecast_dic = pickle.load(f)
-
-    from tools.combine_results.combine_weights_and_forecasts import combine_weights_and_forecasts
     from tools.combine_results.combine_weights_and_forecasts import create_weights_forecast_dict
 
     if verbosity >= 4:
@@ -427,7 +426,7 @@ def run_model_aggregation(
 
     if verbosity >= 4:
         print("transform_multiple_dict_to_long End")
-    from hierarchicalforecast.methods import BottomUp, MinTrace, MinTraceSparse, ERM
+    from hierarchicalforecast.methods import BottomUp, MinTrace
     from hierarchicalforecast.core import HierarchicalReconciliation
 
     reconcilers = [
@@ -465,7 +464,6 @@ def run_model_aggregation(
     if verbosity > 3:
         print("combine_actuals_and_reconciliations")
 
-    from tools.transformations.transform_aggregated_data import transform_long_to_dict
     from tools.combine_results.combine_actuals_and_reconciliations import combine_actuals_and_reconciliations
 
     reconciliation_dict = combine_actuals_and_reconciliations(aggregated_data, Y_rec_df)
@@ -476,7 +474,6 @@ def run_model_aggregation(
     if verbosity > 3:
         print("reconciliation + opt method + mean method")
 
-    from tools.combine_results.combine_weightedForecast_and_reconciliation import combine_weightedForecast_reconciliation
     from tools.combine_results.combine_weightedForecast_and_reconciliation import merge_forecast_with_reconciliation
 
     #Funktion zum Verschneiden von forecast_weighted und reconciliation_dct basierend auf den Schlüssel-Gruppierungsvariablen
@@ -490,7 +487,7 @@ def run_model_aggregation(
 
     from tools.evaluation.calculate_metrics import calculate_metrics
     method_list = ["base", "equal_weights_pred", "BottomUp", "MinTrace_method-wls_struct", "MinTrace_method-ols", "weighted_pred"]
-    metric = ["MAE", "MSE", "MAPE", "MASE", "WAPE", "RMSE", "RMSSE", "SMAPE"]  
+    metric = ["MASE", "WAPE", "RMSSE", "SMAPE"]  
     metrics_result_dict = final_dict.copy()
     dataset = data['dataframe_name']
     #metrics_result_dict.display()
@@ -557,19 +554,21 @@ def run_model_aggregation(
 # SETTINGS
 ################################################################################################################
 
-current_dir = "/Workspace/Users/simon.pradel@telefonicatgt.es/p-l_prediction/P&L_Prediction/results/"
+
+current_dir = os.path.join(main_dir, "results")
 
 # main Setting 
 forecast_methods = ["global", "level"]
 time_limit = [60 * 10, 60 * 30] # pro fold = time_limit in sec, für jedes Kombination!! # 60 * 10 = 10 Min, 60 * 30 = 30 Min
 models = ["AutoARIMA", "AutoETS", "AutoTS", "AutoGluon"]
+models = ["AutoETS"]
 optim_method = ["ensemble_selection", "optimize_nnls", "differential_evolution"]
 used_period_for_cv = 0.45
 
 # Further Settings
 reduceCompTime = True # if True, the combination "level" + "AutoETS" or "AutoARIMA" is NOT calculated
 use_best_model = False
-verbosity = 3 # 0 = close to nothing, 1 = only important messages, 2 = all important section in MAIN File, 3 = all important section in FUNCTION File, 4 = debugging Main, 5 = Debugging Function
+verbosity = 4 # 0 = close to nothing, 1 = only important messages, 2 = all important section in MAIN File, 3 = all important section in FUNCTION File, 4 = debugging Main, 5 = Debugging Function
 includeModels = None
 excludeModels = None
 remove_groups = [False] #True, 
@@ -578,8 +577,7 @@ delete_weights_folder = False # DONT CHANGE TO TRUE, IF YOU DONT WANT DO DISCARD
 delete_forecast_folder = False # DONT CHANGE TO TRUE, IF YOU DONT WANT DO DISCARD LONG RUN CALCULATIONS
 RERUN_calculate_weights = True # False only useful if a weights folder exists 
 RERUN_calculate_forecast = True # False only useful if a forecasts folder exists
-RERUN_calculate_weights = False # False only useful if a weights folder exists 
-RERUN_calculate_forecast = False # False only useful if a forecasts folder exists
+
 
 ### Telefonica Settings ###
 test_period = 1
@@ -614,7 +612,7 @@ datasets = [
 
 
 # Filter datasets
-run_Telefonica_data = True
+run_Telefonica_data = False # not available
 run_other_data = True
 
 # run one or multiple specific dataset (einschließlich, was nicht laufen soll)
@@ -629,6 +627,7 @@ run_dataset = ["tourism", "global_electricity_production", "superstore", "M5"]
 run_dataset = ['Telefonica - bad_debt', 'Telefonica - commercial_costs', 'Telefonica - cos', 'Telefonica - fbb_fixed_other_revenue', 'Telefonica - hardware_revenue', 'Telefonica - mobile_service_revenue', 'Telefonica - non_commercial_costs', 'Telefonica - non_recurrent_income_cost']
 #run_dataset = ['website_traffic']
 run_dataset = None # no filter
+run_dataset = ['italian_grocery_store']
 
 #run_dataset = None # no filter
 exclude_datasets = None #["website_traffic", "australian_labour_market", "superstore", "M5"]
@@ -669,6 +668,7 @@ for dataset in datasets:
         print(f"Running model aggregation for dataset: {dataset_name}")
         
         if dataset["Telefoncia_data"]:
+            save_final_results_path = os.path.join(main_dir, "results")
             save_final_results_path = "/Workspace/Users/simon.pradel@telefonicatgt.es/p-l_prediction/P&L_Prediction/results/Telefonica - overall/forecasts"
         else:
             save_final_results_path = None
