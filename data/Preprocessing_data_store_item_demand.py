@@ -3,10 +3,17 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
-
-from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id, dense_rank, row_number
+###############################################################################
+# Load Data
+###############################################################################
+from itertools import chain, combinations
+from pyspark.sql.functions import col
 from pyspark.sql.window import Window
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.functions import last_day
+from pyspark.sql.functions import concat, lit
+
 spark = SparkSession.builder.getOrCreate()
 
 # Load the M5 dataset
@@ -23,11 +30,12 @@ store_item_demand.display()
 print(store_item_demand.select("`store`", "`item`").distinct().count())
 
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`store`", "`item`"] 
 df_original = store_item_demand
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -53,10 +61,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql import Window
-from pyspark.sql.functions import last_day
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 # Convert "Order Date" column to the last day of the month
 df = store_item_demand.withColumnRenamed("sales", "total")
@@ -75,23 +82,18 @@ window_spec = Window.orderBy("store", "item")
 df = df.withColumn("ts_id", F.dense_rank().over(window_spec))
 
 # Adjust column order: "ts_id", "date", "total" and then the grouping variables
-df = df.select("ts_id", "date", "total", 
-                              "store", "item")
+df = df.select("ts_id", "date", "total", "store", "item")
 
 # Sort by ts_id and date
 df = df.orderBy("ts_id", "date")
 
 # Sort by ts_id and date
 df = df.orderBy("ts_id", "date")
-
-# Convert the columns 'brand' and 'item' to string columns
-from pyspark.sql.functions import col
 
 # Convert the columns 'brand' and 'item' to string data type
 df = df.withColumn("item", col("item").cast("string"))
 df = df.withColumn("store", col("store").cast("string"))
 
-from pyspark.sql.functions import col, concat, lit
 
 # Add an 'S' to the 'store' column and convert to string
 df = df.withColumn("store", concat(lit("S"), col("store").cast("string")))
@@ -113,6 +115,9 @@ for col in string_columns:
     print(f"Column '{col}' has {distinct_count} unique values.")
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -126,25 +131,15 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 # COMMAND ----------
-
-type(df)
-
-# COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`store_item_demand`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`store_item_demand`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()

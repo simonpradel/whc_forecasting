@@ -3,10 +3,19 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
+###############################################################################
+# Load Data
+###############################################################################
 
-from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id, dense_rank, row_number
+from pyspark.sql.functions import col
 from pyspark.sql.window import Window
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import count, when
+from itertools import chain, combinations
+from pyspark.sql.functions import last_day, to_date
+from pyspark.sql import functions as F
+from pyspark.sql.functions import regexp_replace
+
 spark = SparkSession.builder.getOrCreate()
 
 # Load the M5 dataset
@@ -22,21 +31,21 @@ print("Number of rows:", row_count)
 monthly_food_retail_prices.display()
 print(monthly_food_retail_prices.select("`State`", "`Centre`", "`Commodity`", "`Variety`", "`Unit`", "`Category`").distinct().count())
 
-from pyspark.sql.functions import col, sum
+
 # Calculate the number of missing values in the "Retail Price" column
 missing_values_count = monthly_food_retail_prices.filter(col("Retail Price").isNull()).count()
 
 # Output the number of missing values
 print("Number of missing values in Retail Price:", missing_values_count)
 
-
-
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`State`", "`Centre`", "`Commodity`", "`Variety`", "`Unit`"] # "['`Category`']" = constant 
 df_original = monthly_food_retail_prices
 
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -61,10 +70,6 @@ distinct_count_sum = results_df.select("Distinct Count").groupBy().sum("Distinct
 results_df.display()
 print(distinct_count_sum)
 
-# COMMAND ----------
-
-from pyspark.sql.functions import col, count, when, isnan
-
 # Check distributions: calculate the number of entries and missing values for each combination of State, Centre, and Category
 aggregated_data = (
     monthly_food_retail_prices
@@ -75,14 +80,11 @@ aggregated_data = (
     )
 )
 
-# Display the results
-display(aggregated_data)
-
+print(aggregated_data)
 # COMMAND ----------
-
-from pyspark.sql.functions import col, when
-from pyspark.sql.functions import last_day, to_date
-from pyspark.sql import functions as F
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 # Delete all rows where the value in the "Retail Price" column is null
 df = monthly_food_retail_prices.filter(col("Retail Price").isNotNull())
@@ -134,13 +136,9 @@ for col in string_columns:
     distinct_count = df.select(col).distinct().count()
     print(f"Column '{col}' has {distinct_count} unique values.")
 
-from pyspark.sql.functions import regexp_replace
-
 # Replace "/" with "_" in a specific column (e.g., 'ColumnName')
 df = df.withColumn('Commodity', regexp_replace('Commodity', '/', '_'))
 df = df.withColumn('State', regexp_replace('State', '/', '_'))
-
-from pyspark.sql.functions import col
 
 # Filter by date
 df = df.filter(col("date") > "2011-01-01")
@@ -149,11 +147,12 @@ df = df.filter(col("date") > "2011-01-01")
 df.display()
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 columns = ["State", "Commodity"] #  "`Country`", is a constant
 df_original = df
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -178,16 +177,11 @@ distinct_count_sum = results_df.select("Distinct Count").groupBy().sum("Distinct
 results_df.display()
 print(distinct_count_sum)
 
-# COMMAND ----------
-
-# DBTITLE 1,Example
 # Filter DataFrame by "west"
 filtered_df = df.filter(df.State.isin(["West Bengal"]))  # Example for western states
 filtered_df = filtered_df.filter(filtered_df.date.isin(["2020-10-31"]))  # Example for western states
 
 filtered_df.display()
-
-# COMMAND ----------
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -201,25 +195,15 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 # COMMAND ----------
-
-type(df)
-
-# COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`retail_prices`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`retail_prices`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()

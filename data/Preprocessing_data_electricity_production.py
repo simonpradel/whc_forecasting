@@ -3,10 +3,16 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
+###############################################################################
+# Load Data
+###############################################################################
 
-from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id, dense_rank, row_number
 from pyspark.sql.window import Window
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+from itertools import chain, combinations
+
 spark = SparkSession.builder.getOrCreate()
     
 # Load the M5 dataset
@@ -15,18 +21,14 @@ global_electricity_production = spark.sql("""
     FROM `analytics`.`p&l_prediction`.`global_electricity_production_original`
 """)
 
-# Convert the Spark DataFrame to a Pandas DataFrame
-global_electricity_production_original = global_electricity_production.toPandas()
-
-global_electricity_production.display()
-print(global_electricity_production.select("`country_name`", "`parameter`", "`product`", "unit").distinct().count())
-
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`country_name`", "`parameter`", "`product`"] # "unit" = constant 
 df_original = global_electricity_production
 
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -46,16 +48,12 @@ results_df = spark.createDataFrame(results, ["Column(s)", "Distinct Count", "Typ
 
 # Count distinct values for the entire dataset
 distinct_count_sum = results_df.select("Distinct Count").groupBy().sum("Distinct Count").collect()[0][0]
-
-# Convert results into a DataFrame and display
-results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql import Window
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 # Helper function to format the date string
 def format_date_column(date_str):
@@ -70,7 +68,7 @@ def format_date_column(date_str):
     # Assemble the formatted date in the format MM/dd/yyyy
     return "/".join(parts)
 
-# User-defined function (UDF) for applying to the column
+# User-defined function for applying to the column
 format_date_udf = F.udf(format_date_column, T.StringType())
 
 # First format the date column by applying the UDF
@@ -128,8 +126,10 @@ row_count = df.count()
 print(f"Number of rows in the DataFrame: {row_count}")
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
-# DBTITLE 1,Info for Paper
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
 
@@ -142,21 +142,15 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 # COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`global_electricity_production`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`global_electricity_production`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()

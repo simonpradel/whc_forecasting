@@ -3,10 +3,15 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
-
-from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id, dense_rank, row_number
+###############################################################################
+# Load Data
+###############################################################################
+from pyspark.sql.functions import dense_rank, row_number
 from pyspark.sql.window import Window
+from pyspark.sql.functions import expr
 from pyspark.sql import SparkSession
+from itertools import chain, combinations
+
 spark = SparkSession.builder.getOrCreate()
 
 # Load the tourism dataset
@@ -19,11 +24,12 @@ tourism.display()
 print(tourism.select("`Region`", "`State`", "`Purpose`").distinct().count())
 
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`Region`", "`State`", "`Purpose`"] #  "`Country`", is a constant
 df_original = tourism
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -49,9 +55,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql import Window
-from pyspark.sql.functions import dense_rank, row_number, col, expr
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 df = tourism 
 # Rename columns
@@ -80,6 +86,9 @@ df = df.select("ts_id", "date", "total", "Region", "State", "Purpose").orderBy("
 df.display()
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -93,21 +102,15 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 # COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`tourism`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`tourism`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 pandas_df = df.toPandas()

@@ -3,9 +3,12 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
-
+###############################################################################
+# Load Data
+###############################################################################
+from itertools import chain, combinations
 from pyspark.sql import functions as F
-from pyspark.sql.window import Window
+from pyspark.sql import Window
 from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
 
@@ -19,11 +22,12 @@ superstore.display()
 print(superstore.select("`Ship Mode`", "`Segment`", "`Country`", "`City`","" "`State`", "`Postal Code`", "`Region`",  "`Category`", "`Sub-Category`").distinct().count())
 
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`Ship Mode`", "`Segment`", "`City`","" "`State`", "`Postal Code`", "`Region`",  "`Category`", "`Sub-Category`"] #  "`Country`", is a constant
 df_original = superstore
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -49,9 +53,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql import Window
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 df = superstore
 
@@ -85,6 +89,9 @@ df = df.orderBy("ts_id", "date")
 df.display()
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -99,8 +106,6 @@ print(f"Length of a time series (number of observations): {time_series_length}")
 
 columns = ["ShipMode", "Segment", "Region", "Category"] #  "`Country`", is a constant
 df_original = df
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -126,25 +131,15 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-df.display()
-
-# COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`superstore`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`superstore`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()

@@ -3,10 +3,16 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
+###############################################################################
+# Load Data
+###############################################################################
 
 from pyspark.sql import functions as F
 from pyspark.sql import Window
 from pyspark.sql import SparkSession
+from itertools import chain, combinations
+from pyspark.sql.functions import last_day
+
 spark = SparkSession.builder.getOrCreate()
 
 # Load the M5 dataset
@@ -22,11 +28,12 @@ prison_population.display()
 print(prison_population.select("`State`", "`Gender`", "`Legal`", "`Indigenous`").distinct().count())
 
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`State`", "`Gender`", "`Legal`", "`Indigenous`"] # "['`product`']" = constant 
 df_original = prison_population
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -52,9 +59,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql import Window
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 # Convert "Order Date" column to the last day of the month
 df = prison_population.withColumnRenamed("Date", "date")
@@ -77,7 +84,6 @@ df = df.select("ts_id", "date", "total",
 # Sort by ts_id and date
 df = df.orderBy("ts_id", "date")
 
-from pyspark.sql.functions import last_day
 
 # Set the date to the end of the month
 df = df.withColumn('date', last_day(df['date']))
@@ -94,6 +100,9 @@ dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -107,21 +116,15 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 # COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`prison_population`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`prison_population`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()

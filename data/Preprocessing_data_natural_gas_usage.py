@@ -3,12 +3,18 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
+###############################################################################
+# Load Data
+###############################################################################
 
-from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id,dense_rank, row_number
+from pyspark.sql.functions import concat_ws
 from pyspark.sql.window import Window
+from pyspark.sql.functions import  to_date, last_day, lpad, lit
+from pyspark.sql import functions as F
 from pyspark.sql import SparkSession
-spark = SparkSession.builder.getOrCreate()
+from itertools import chain, combinations
 
+spark = SparkSession.builder.getOrCreate()
 
 # Load the M5 dataset
 natural_gas_usage = spark.sql("""
@@ -24,11 +30,12 @@ print(natural_gas_usage.select("`duoarea`", "`product`", "`process`", "`series`"
 print(natural_gas_usage.select("units").distinct().count())
 
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`duoarea`", "`process`"] # "['`product`']" = constant  , "`series`" = combination of duarea and process
 df_original = natural_gas_usage
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -54,8 +61,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql.functions import concat_ws, to_date, last_day, lpad, lit
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 df = natural_gas_usage
 
@@ -73,11 +81,6 @@ df = df.drop("year", "area-name", "product-name", "process-name", "series", "uni
 
 # Display the result
 df.display()
-
-# COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql import Window
 
 # Convert "Order Date" column to the last day of the month
 df = df.withColumnRenamed("value", "total")
@@ -108,6 +111,9 @@ print(df.select("date").distinct().count())
 df.groupBy('ts_id').count().show()
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -121,21 +127,15 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 # COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`natural_gas_usage`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`natural_gas_usage`")
 # Redefine the DataFrame to ensure it matches the latest schema
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()

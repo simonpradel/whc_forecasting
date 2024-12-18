@@ -3,11 +3,16 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
+###############################################################################
+# Load Data
+###############################################################################
 
-from pyspark.sql.functions import col, expr, lit, array, posexplode, date_add, concat_ws, sum as spark_sum, row_number, dense_rank
+from pyspark.sql.functions import col, expr, lit, array, date_add, sum as spark_sum, row_number, dense_rank
 from pyspark.sql.types import IntegerType
 from pyspark.sql.window import Window
 from pyspark.sql import SparkSession
+from itertools import chain, combinations
+
 spark = SparkSession.builder.getOrCreate()
 
 # Load the M5 dataset
@@ -26,25 +31,22 @@ m_5_calendar = spark.sql("""
     FROM `analytics`.`p&l_prediction`.`m_5_calendar`
 """)
 
-# COMMAND ----------
-
 m_5_sales = spark.sql("""
     SELECT * 
     FROM `analytics`.`p&l_prediction`.`m_5_sales_train_evaluation`
 """)
+
 print(m_5_sales.select("`item_id`", "`dept_id`", "`cat_id`", "`store_id`", "`state_id`").distinct().count())
 
 # COMMAND ----------
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 m_5_sales_original = m_5_sales.toPandas()
 m_5_sell_prices_original = m_5_sell_prices.toPandas()
 m_5_calendar_original = m_5_calendar.toPandas()
-
-# COMMAND ----------
-
-from pyspark.sql.functions import col, expr, lit, array, posexplode, date_add
-from pyspark.sql.types import IntegerType
 
 # List of day columns
 days_columns = [f"d_{i}" for i in range(1, 1942)]
@@ -75,15 +77,9 @@ df = df.select(
 df = df.drop("days_array") 
 other_columns.remove('days_array')
 
-# COMMAND ----------
-
-# DBTITLE 1,calender
 # Join df with m_5_calendar to get wm_yr_wk
 df = df.join(m_5_calendar.select("date", "wm_yr_wk"), on="date", how="left")
 
-# COMMAND ----------
-
-# DBTITLE 1,sales prices
 # Join df with m_5_sell_prices to get sell_price
 df = df.join(
     m_5_sell_prices.select("store_id", "item_id", "wm_yr_wk", "sell_price"),
@@ -96,45 +92,11 @@ df = df.withColumn("sales", col("sales").cast("double") * col("sell_price"))
 
 df.display()
 
-# COMMAND ----------
-
-columns = ["`state_id`", "`store_id`", "`dept_id`", "`cat_id`", "`item_id`"] # "unit" = constant 
-df_original = df
-
-from itertools import chain, combinations
-
-# Function to get all subsets of a list
-def all_subsets(lst):
-    return chain.from_iterable(combinations(lst, r) for r in range(1, len(lst) + 1))
-
-# List to store results
-results = []
-
-# Count distinct values for each subset of columns
-for subset in all_subsets(columns):
-    subset_list = list(subset)
-    distinct_count = df_original.select(*subset_list).distinct().count()
-    results.append((str(subset_list), distinct_count, "Subset"))
-
-# Convert results into a DataFrame
-results_df = spark.createDataFrame(results, ["Column(s)", "Distinct Count", "Type"])
-
-# Count distinct values for the entire dataset
-distinct_count_sum = results_df.select("Distinct Count").groupBy().sum("Distinct Count").collect()[0][0]
-
-# Convert results into a DataFrame and display
-results_df.display()
-print(distinct_count_sum)
-
-# COMMAND ----------
-
 # Select the required columns
 other_columns.remove('item_id')
 df = df.select("date", "sales", *other_columns)
 
 df.display()
-
-# COMMAND ----------
 
 # DBTITLE 1,Aggregate sales
 # Sum the sales by id and date
@@ -142,11 +104,6 @@ df = df.groupBy("state_id", "store_id", "dept_id", "cat_id", "date").agg(
     spark_sum("sales").alias("total")
 )
 
-df.display()
-
-# COMMAND ----------
-
-# DBTITLE 1,Create new ID for each combination
 # Generate a time series ID
 # Window spec to partition by unique combination and order by state_id, store_id, dept_id, cat_id
 window_spec = Window.partitionBy("state_id", "store_id", "dept_id", "cat_id").orderBy("state_id", "store_id", "dept_id", "cat_id")
@@ -168,8 +125,37 @@ df = df.select("ts_id", "date", "total", "state_id", "store_id", "cat_id", "dept
 df.display()
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
-# DBTITLE 1,Info for paper
+columns = ["`state_id`", "`store_id`", "`dept_id`", "`cat_id`", "`item_id`"] # "unit" = constant 
+df_original = df
+
+# Function to get all subsets of a list
+def all_subsets(lst):
+    return chain.from_iterable(combinations(lst, r) for r in range(1, len(lst) + 1))
+
+# List to store results
+results = []
+
+# Count distinct values for each subset of columns
+for subset in all_subsets(columns):
+    subset_list = list(subset)
+    distinct_count = df_original.select(*subset_list).distinct().count()
+    results.append((str(subset_list), distinct_count, "Subset"))
+
+# Convert results into a DataFrame
+results_df = spark.createDataFrame(results, ["Column(s)", "Distinct Count", "Type"])
+
+# Count distinct values for the entire dataset
+distinct_count_sum = results_df.select("Distinct Count").groupBy().sum("Distinct Count").collect()[0][0]
+
+# Convert results into a DataFrame and display
+results_df.display()
+print(distinct_count_sum)
+
+
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
 
@@ -182,9 +168,6 @@ time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of u
 print(f"Length of a time series (number of observations): {time_series_length}")
 
 columns = ["state_id", "store_id", "dept_id", "cat_id"] #  "`Country`", is a constant
-df_original = df
-
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -210,15 +193,11 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-df.display()
-
-# COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`m_5_sales_long`")
 

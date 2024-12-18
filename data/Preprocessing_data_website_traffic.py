@@ -3,9 +3,15 @@
 # MAGIC Data preparation: The original dataset is modified, and the result is saved in the dataset folder. Therefore, the following steps are not required to reproduce the results.
 
 # COMMAND ----------
-
-from pyspark.sql.functions import col, concat_ws, monotonically_increasing_id, dense_rank, row_number
-from pyspark.sql.window import Window
+###############################################################################
+# Load Data
+###############################################################################
+from itertools import chain, combinations
+from pyspark.sql import functions as F
+from pyspark.sql import Window
+from pyspark.sql.functions import when
+from pyspark.sql.functions import col
+from pyspark.sql.functions import to_date
 from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
 
@@ -15,23 +21,18 @@ website_traffic = spark.sql("""
     FROM `analytics`.`p&l_prediction`.`website_traffic_original`
 """)
 
-# Convert the Spark DataFrame to a Pandas DataFrame
-website_traffic_original = website_traffic.toPandas()
-
-# Save the Pandas DataFrame as a CSV file
-# website_traffic_original.to_csv('/Workspace/Users/simon.pradel@telefonicatgt.es/p-l_prediction/P&L_Prediction/data/original_datasets/website_traffic_original.csv', index=False)
-
 website_traffic.display()
 
 print(website_traffic.select("`Device Category`", "`Browser`").distinct().count())
 
-
 # COMMAND ----------
+###############################################################################
+# Overview of the original data
+###############################################################################
 
 columns = ["`Device Category`", "`Browser`"] #  "`Country`", is a constant
 df_original = website_traffic
 
-from itertools import chain, combinations
 
 # Function to get all subsets of a list
 def all_subsets(lst):
@@ -57,9 +58,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql import Window
+###############################################################################
+# Preparation of the data
+###############################################################################
 
 # Convert "Order Date" column to the last day of the month
 df = website_traffic.withColumnRenamed("Date", "date")
@@ -85,9 +86,6 @@ df = df.orderBy("ts_id", "date")
 
 # Get ts_ids with count < 1032
 small_ts_ids = df.groupBy('ts_id').count().filter('count < 1000').select('ts_id').rdd.flatMap(lambda x: x).collect()
-
-# Define a function to update column values based on the condition
-from pyspark.sql.functions import when
 
 # Apply the changes to "DeviceCategory" and "Browser" for ts_id with less than 1000 observations
 df = df.withColumn(
@@ -136,8 +134,6 @@ print(f"Length of a time series (number of observations): {time_series_length}")
 columns = ["DeviceCategory", "Browser"] #  "`Country`", is a constant
 df_original = df
 
-from itertools import chain, combinations
-
 # Function to get all subsets of a list
 def all_subsets(lst):
     return chain.from_iterable(combinations(lst, r) for r in range(1, len(lst) + 1))
@@ -162,6 +158,9 @@ results_df.display()
 print(distinct_count_sum)
 
 # COMMAND ----------
+###############################################################################
+# Overview of the pre-processed data
+###############################################################################
 
 dfP = df.toPandas()
 print(f"Date range: {dfP['date'].min()} to {dfP['date'].max()}")
@@ -174,31 +173,19 @@ print(f"Number of time series (unique ts_id): {unique_ts_id_count}")
 time_series_length = dfP.groupby("ts_id")["date"].nunique().max()  # Number of unique dates per ts_id
 print(f"Length of a time series (number of observations): {time_series_length}")
 
-# COMMAND ----------
 
-df.display()
-
-# COMMAND ----------
-
-################################################## Important #####################################################
-# Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
-################################################## Important #####################################################
-from pyspark.sql.functions import col
-from pyspark.sql.functions import to_date
-from datetime import datetime
 df = df.withColumn("date", to_date(col("date"), "yyyy-MM-dd"))
 df.display()
 
-
 # COMMAND ----------
-
+###############################################################################
 # Save the final DataFrame back to the same database and table
+###############################################################################
+# Important: Note that in the current Version all Variables beside ts_id, date and total will be used as grouping variables
+
 # DELETE THE OLD TABLE FIRST
 spark.sql("DROP TABLE IF EXISTS `analytics`.`p&l_prediction`.`website_traffic`")
 df.write.mode("overwrite").saveAsTable("`analytics`.`p&l_prediction`.`website_traffic`")
-
-
-# COMMAND ----------
 
 # Convert the Spark DataFrame to a Pandas DataFrame
 df = df.toPandas()
