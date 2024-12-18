@@ -1,8 +1,6 @@
-import numpy as np
 import pandas as pd
 from itertools import combinations
 from hierarchicalforecast.utils import aggregate
-import copy
 
 def aggregate_by_levels(data, method='dictionary', exclude_variables=None, show_dict_infos=False):
     """
@@ -77,54 +75,99 @@ def aggregate_to_dict(data, show_dict_infos=False):
     return result_dict
 
 
-def aggregate_to_long(data, exclude_variables=None):
 
-    # Make a copy of the input dataframe to avoid modifying it directly
+def aggregate_to_long(data, exclude_variables=None):
+    """
+    Aggregates a pandas DataFrame into multiple levels of groupings and prepares it for time series analysis.
+
+    Parameters:
+    -----------
+    data : dict
+        A dictionary containing the input pandas DataFrame with a key 'pandas_df'.
+        The DataFrame should include the following columns:
+        - 'total': Numerical column representing the target variable.
+        - 'date': Column containing the date values.
+        - Optional additional columns to be used for groupby aggregations.
+    
+    exclude_variables : list, optional
+        A list of column names to exclude from the DataFrame before aggregation. 
+        If a column in the list does not exist, it will be ignored.
+
+    Returns:
+    --------
+    dict
+        A dictionary containing:
+        - "groupby_combinations" : list of lists
+            All generated combinations of groupby column names for aggregation.
+        - "Y_df" : pandas DataFrame
+            The aggregated DataFrame ready for further analysis.
+        - "S_df" : pandas DataFrame
+            Summary statistics or additional aggregated output returned by the `aggregate` function.
+        - "tags" : list
+            Tags or metadata returned by the `aggregate` function.
+
+    Notes:
+    ------
+    - The function renames the 'total' column to 'y' and 'date' column to 'ds' for compatibility 
+      with time series forecasting libraries.
+    - It generates all combinations of the groupby columns (except 'dataset', 'ds', 'y') for 
+      hierarchical aggregation.
+    - The top-level aggregation (grouping only by 'dataset') is always included.
+    - The function assumes the existence of an external `aggregate` function that performs the 
+      actual aggregation logic.
+    """
+    # Extract the DataFrame from the input dictionary
     df = data["pandas_df"]
 
-    # Lade das entsprechende DataFrame
-    Y_df = df
+    # Make a copy of the DataFrame to avoid modifying the original data
+    Y_df = df.copy()
 
-    # Spalten umbenennen
-    Y_df = df.rename({'total': 'y', 'date': 'ds'}, axis=1)
+    # Rename columns for time series compatibility
+    Y_df = Y_df.rename({'total': 'y', 'date': 'ds'}, axis=1)
 
-    # Remove excluded variables from the DataFrame
+    # Remove excluded variables if specified
     if exclude_variables is not None:
         Y_df = Y_df.drop(columns=exclude_variables, errors='ignore')
 
-    # Extract all column names except 'ts_id', 'date', and 'total'
+    # Identify columns to use for groupby operations
+    # Exclude 'ts_id', 'y', 'ds', and 'total' columns
     groupby_cols = Y_df.columns[~Y_df.columns.isin(['ts_id', 'y', 'ds', 'total'])].tolist()
-    groupby_cols.remove('dataset')
 
+    # Ensure 'dataset' is included
+    if 'dataset' in groupby_cols:
+        groupby_cols.remove('dataset')
+
+    # Define the column order for the selected DataFrame
     selected_columns = ['dataset', 'ds', 'y'] + groupby_cols
     Y_df = Y_df[selected_columns]
 
-    # Konvertiere die 'ds'-Spalte in das Datetime-Format
+    # Convert the 'ds' column to datetime format for time series processing
     Y_df['ds'] = pd.to_datetime(Y_df['ds'])
 
-    # Extrahiere alle Spaltennamen außer 'ds' und 'y', wenn keine angegeben sind
+    # Update groupby_cols to exclude 'ds' and 'y'
     groupby_cols = Y_df.columns[~Y_df.columns.isin(['ds', 'y'])].tolist()
-    groupby_cols = groupby_cols[1:]
+    groupby_cols = groupby_cols[1:]  # Exclude the 'dataset' column
 
-    # Generiere alle Kombinationen der groupby-Spalten
+    # Generate all possible combinations of the groupby columns for aggregation
     groupby_combinations = []
     max_comb_len = len(groupby_cols)
     for r in range(1, max_comb_len + 1):
         groupby_combinations.extend(combinations(groupby_cols, r))
 
-    # Always include top-level aggregation
+    # Always include the top-level aggregation (grouping only by 'dataset')
     groupby_combinations = [['dataset']] + [['dataset'] + list(comb) for comb in groupby_combinations]
 
-    # Aggregiere die Daten (die Funktion 'aggregate' wird hier als gegeben angenommen)
+    # Perform the aggregation using the external 'aggregate' function
+    # The 'aggregate' function is assumed to return aggregated DataFrames and tags
     Y_df, S_df, tags = aggregate(Y_df, groupby_combinations)
+
+    # Reset the index of the final aggregated DataFrame
     Y_df = Y_df.reset_index()
 
-    # Rückgabe eines Dictionaries mit den Ergebnissen
+    # Return the results as a dictionary
     return {
         "groupby_combinations": groupby_combinations,
         "Y_df": Y_df,
         "S_df": S_df,
         "tags": tags,
     }
-
-

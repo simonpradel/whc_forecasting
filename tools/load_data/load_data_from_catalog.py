@@ -1,15 +1,39 @@
 import os
-import sys
-from pyspark.sql.functions import lit
 import pandas as pd
+from pyspark.sql.functions import lit
 from pyspark.sql import DataFrame as SparkDataFrame
 from pyspark.sql.types import IntegerType, FloatType
+from pyspark.sql import SparkSession
 
+def load_data_from_catalog(data, datasetName=None, maindir=None):
+    """
+    Load a dataset from a predefined catalog based on the specified `data` parameter.
 
+    Parameters:
+        data (str): Identifier for the dataset to load. Valid values include:
+            "M5", "australian_labour_market", "prison_population", "retail_prices",
+            "natural_gas_usage", "tourism", "global_electricity_production",
+            "superstore", "italian_grocery_store", "store_item_demand", "website_traffic",
+            "test", "Telefonica - mobile_service_revenue", "Telefonica - hardware_revenue",
+            "Telefonica - fbb_fixed_other_revenue", "Telefonica - cos",
+            "Telefonica - commercial_costs", "Telefonica - non_commercial_costs",
+            "Telefonica - non_recurrent_income_cost", "Telefonica - bad_debt".
 
-def load_data_from_catalog(data, datasetName=None, maindir = None):
-    print("hi")
-    from pyspark.sql import SparkSession
+        datasetName (str, optional): Specific name of the dataset to select from the loaded data.
+            Defaults to the first dataset in the dictionary.
+
+        maindir (str, optional): Base directory for locating dataset files.
+            Defaults to the current working directory if not specified.
+
+    Returns:
+        dict: A dictionary containing the following keys:
+            - 'datasetNameGeneral' (str): General identifier for the dataset.
+            - 'dataframe_name' (str): Name of the selected dataset.
+            - 'target_column_name' (str): Name of the target column in the dataset.
+            - 'grouping_variables' (list): Columns to be used for grouping (excluding date and target columns).
+            - 'freq' (str): Frequency of the data (e.g., "D", "QE", "ME").
+            - 'original_dataset' (SparkDataFrame or pd.DataFrame): The loaded dataset.
+    """
     spark = SparkSession.builder.getOrCreate()
     if maindir == None:
         maindir = os.getcwd()
@@ -17,94 +41,88 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
     if data == "M5":
         current_dir = os.path.join(maindir, "data/datasets/m5_sales_long.csv")
+        
         df = pd.read_csv(current_dir)
         
         df = spark.createDataFrame(df)
 
         df = df.withColumn("dataset", lit(data))
         
-        # Dictionary of datasets with their corresponding names
         datasets = {'m_5_sales_long': df}
 
         freq = "D"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "total"
 
     elif data == "australian_labour_market":
         current_dir = os.path.join(maindir, "data/datasets/australian_labour_market.csv")
+        
         df = pd.read_csv(current_dir)
         
         df = spark.createDataFrame(df)
 
         df = df.withColumn("dataset", lit(data))
-        
-        # Dictionary of datasets with their corresponding names
+
         datasets = {'australian_labour_market': df}
 
         freq = "QE"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "total"
 
     elif data == "prison_population":
         current_dir = os.path.join(maindir, "data/datasets/prison_population.csv")
+        
         df = pd.read_csv(current_dir)
         
         df = spark.createDataFrame(df)
 
         df = df.withColumn("dataset", lit(data))
-        
-        # Dictionary of datasets with their corresponding names
+
         datasets = {'prison_population': df}
 
         freq = "QE"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "total"
 
     elif data == "retail_prices":
         current_dir = os.path.join(maindir, "data/datasets/retail_prices.csv")
+        
         df = pd.read_csv(current_dir)
         
         df = spark.createDataFrame(df)
 
         df = df.withColumn("dataset", lit(data))
-        
-        # Dictionary of datasets with their corresponding names
+
         datasets = {'retail_prices': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "total"
 
     elif data == "natural_gas_usage":
         current_dir = os.path.join(maindir, "data/datasets/natural_gas_usage.csv")
+        
         df = pd.read_csv(current_dir)
         
         df = spark.createDataFrame(df)
 
         df = df.withColumn("dataset", lit(data))
         
-        # Dictionary of datasets with their corresponding names
         datasets = {'natural_gas_usage': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "total"
         
     elif data == "tourism":
         current_dir = os.path.join(maindir, "data/datasets/tourism.csv")
+        
         df = pd.read_csv(current_dir)
         
         df = spark.createDataFrame(df)
 
-        # Add the new column with constant value 'M5'
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'tourism': df}
 
         target_column_name = "total"
@@ -112,17 +130,14 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         freq = "QE"
 
     elif data == "global_electricity_production":
-
-        # CSV-Datei aus dem Pfad "data/" laden
         current_dir = os.path.join(maindir, "data/datasets/global_electricity_production.csv")
+        
         df = pd.read_csv(current_dir)
 
         df = spark.createDataFrame(df)
 
-        # Add the new column with constant value 'superstore'
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'global_electricity_production': df}
 
         target_column_name = "total"
@@ -130,19 +145,14 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         freq = "ME"
 
     elif data == "superstore":
-
-        # CSV-Datei aus dem Pfad "data/" laden
         current_dir = os.path.join(maindir, "data/datasets/superstore.csv")
+        
         df = pd.read_csv(current_dir)
 
         df = spark.createDataFrame(df)
-        
 
-
-        # Add the new column with constant value 'superstore'
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'superstore': df}
 
         target_column_name = "total"
@@ -150,18 +160,14 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         freq = "ME"
 
     elif data == "italian_grocery_store":
-
-        # CSV-Datei aus dem Pfad "data/" laden
         current_dir = os.path.join(maindir, "data/datasets/italian_grocery_store.csv")
+        
         df = pd.read_csv(current_dir)
-
 
         df = spark.createDataFrame(df)
 
-        # Add the new column with constant value 'superstore'
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'italian_grocery_store': df}
 
         target_column_name = "total"
@@ -169,16 +175,13 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         freq = "D"
 
     elif data == "store_item_demand":
-
         current_dir = os.path.join(maindir, "data/datasets/store_item_demand.csv")
         df = pd.read_csv(current_dir)
 
         df = spark.createDataFrame(df)
 
-        # Add the new column with constant value 'superstore'
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'store_item_demand': df}
 
         target_column_name = "total"
@@ -186,37 +189,18 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         freq = "ME"
         
     elif data == "website_traffic":
-
         current_dir = os.path.join(maindir, "data/datasets/website_traffic.csv")
         df = pd.read_csv(current_dir)
 
         df = spark.createDataFrame(df)
 
-        # Add the new column with constant value 'superstore'
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'website_traffic': df}
 
         target_column_name = "total"
         
         freq = "D"
-
-    elif data == "test":
-        df = spark.sql("""
-            SELECT * 
-            FROM `analytics`.`p&l_prediction`.`test`
-        """)
-        test = "Telefonica - mobile_service_revenue"
-        df = df.withColumn("dataset", lit(test))
-        
-        # Dictionary of datasets with their corresponding names
-        datasets = {'test': df}
-
-        freq = "ME"
-
-        # Target column name (assumes the last column is the target)
-        target_column_name = "Amount"
 
     elif data == "Telefonica - mobile_service_revenue":
   
@@ -227,15 +211,14 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
  
-        # Dictionary of datasets with their corresponding names
         datasets = {'mobile_service_revenue': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
     elif data == "Telefonica - hardware_revenue":
+
         df = spark.sql("""
             SELECT * 
             FROM `analytics`.`p&l_prediction`.`hardware_revenue`
@@ -243,15 +226,14 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'hardware_revenue': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
     elif data == "Telefonica - fbb_fixed_other_revenue":
+
         df = spark.sql("""
             SELECT * 
             FROM `analytics`.`p&l_prediction`.`fbb_fixed_other_revenue`
@@ -259,7 +241,6 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
         
-        # Dictionary of datasets with their corresponding names
         datasets = {'fbb_fixed_other_revenue': df}
 
         freq = "ME"
@@ -268,6 +249,7 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         target_column_name = "Amount"
 
     elif data == "Telefonica - cos":
+
         df = spark.sql("""
             SELECT * 
             FROM `analytics`.`p&l_prediction`.`cos`
@@ -275,12 +257,10 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'cos': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
     elif data == "Telefonica - commercial_costs":
@@ -291,12 +271,10 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'commercial_costs': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
     elif data == "Telefonica - non_commercial_costs":
@@ -307,12 +285,10 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'non_commercial_costs': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
     elif data == "Telefonica - non_recurrent_income_cost":
@@ -323,17 +299,13 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'non_recurrent_income_cost': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
-        # Add the new column with constant value 'M5'
         df = df.withColumn("dataset", lit(data))
-
 
     elif data == "Telefonica - bad_debt":
         df = spark.sql("""
@@ -343,15 +315,12 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         df = df.withColumn("dataset", lit(data))
 
-        # Dictionary of datasets with their corresponding names
         datasets = {'bad_debt': df}
 
         freq = "ME"
 
-        # Target column name (assumes the last column is the target)
         target_column_name = "Amount"
 
-        # Add the new column with constant value 'M5'
         df = df.withColumn("dataset", lit(data))
 
     else:
@@ -366,8 +335,7 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
         selected_dataset = datasets[selected_name]
 
 
-
-    # Funktion zur Konvertierung der Datentypen
+    # Convert column types
     def convert_column_types(df):
         if isinstance(df, pd.DataFrame):
             # Pandas DataFrame
@@ -395,7 +363,6 @@ def load_data_from_catalog(data, datasetName=None, maindir = None):
 
         return df
     
-    # Konvertiere die Datentypen der relevanten Spalten
     selected_dataset = convert_column_types(selected_dataset)
 
     # Extract grouping variables (columns excluding 'date' and 'total')

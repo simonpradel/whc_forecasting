@@ -1,17 +1,11 @@
-import csv
 import numpy as np
 import pickle
 import copy
-from itertools import combinations
 from scipy.optimize import differential_evolution
-from sklearn.model_selection import TimeSeriesSplit
-from autogluon.timeseries import TimeSeriesPredictor, TimeSeriesDataFrame
-from autots import AutoTS
-from autots.models.model_list import model_lists
 import os
 import time
-from datetime import datetime
-import shutil
+import torch
+import torch.nn.functional as F
 
 def calculate_weights(results, optim_method="ensemble_selection", include_groups = None, remove_groups=False, hillclimbsets=1, max_iterations=50, saveResults=True, save_path=os.getcwd(), verbosity = 0):
     """
@@ -54,7 +48,6 @@ def calculate_weights(results, optim_method="ensemble_selection", include_groups
 
     remove_group_alias = ""
     if(remove_groups):
-        # Entferne schwächere Gruppen und aktualisiere 'aggregated_forecast'
         results_copy['aggregated_forecast'] = iteratively_qualify_and_remove_weaker_groups(
             results_copy['aggregated_forecast'], 
             Y_test_values
@@ -133,15 +126,7 @@ def calculate_weights(results, optim_method="ensemble_selection", include_groups
 
     return results_copy
 
-
-
-
-
-
-################################################################################################################################################################################################################
-############################################################################################### Weight Optimizer ############################################################################################### 
-################################################################################################################################################################################################################
-# Funktion zur Konsolidierung der Vorhersagen
+# Weight Optimizer  
 def consolidate_forecasts(all_selected_groups, forecast_cache):
     """
     Consolidates the forecasts from all selected groups into a single forecast array.
@@ -161,8 +146,6 @@ def consolidate_forecasts(all_selected_groups, forecast_cache):
 
     return np.column_stack(hat_Y_test)
 
-
-# Funktion zur Berechnung des Verlusts
 def calculate_loss(w, Y_t, hat_Y_t_k):
     """
     Calculates the loss (Mean Absolute Error) with L1 regularization for weight optimization.
@@ -177,7 +160,6 @@ def calculate_loss(w, Y_t, hat_Y_t_k):
     """
     hat_Y_t = np.dot(hat_Y_t_k, w)
     return np.mean(np.abs(Y_t - hat_Y_t)) 
-
 
 def optimize_differential_evolution(Y_test_values, hat_Y_test, bounds, n_sets=1):
     """
@@ -250,12 +232,6 @@ def optimize_differential_evolution(Y_test_values, hat_Y_test, bounds, n_sets=1)
     return final_weights
 
 
-
-import torch
-import torch.nn.functional as F
-from scipy.optimize import nnls  # Alternative
-
-
 def optimize_nnls(Y_test_values, hat_Y_test, n_sets=1):
     """
     Optimizes the weights using Non-Negative Least Squares (NNLS) from PyTorch.
@@ -321,168 +297,217 @@ def optimize_nnls(Y_test_values, hat_Y_test, n_sets=1):
 
     return final_weights
 
-
-
 def optimize_ensemble_selection(
     Y_test_values, hat_Y_test, n_sets=1, max_iterations=50, verbose=True):
     """
-    Optimizes weights using a hill climbing approach with ensemble selection.
+    Optimizes model weights using a hill-climbing approach with ensemble selection.
+
+    The method iteratively selects models based on minimizing the mean absolute error (MAE)
+    over the test dataset. Models can be selected multiple times, and the resulting weights
+    are determined based on the frequency of model selections.
 
     Parameters:
-    - Y_test_values (array): Actual values of the test data.
-    - hat_Y_test (array): Forecasted values from different models.
-    - n_sets (int): Number of sets to split the test data for optimization (default: 1, no split).
-    - max_iterations (int): Maximum number of iterations for ensemble selection (default: 50).
-    - verbose (bool): Whether to print progress information (default: True).
+    - Y_test_values (array-like): 
+        The actual target values for the test dataset. Shape: (n_samples,).
+    - hat_Y_test (array-like): 
+        Forecasted values produced by different models. 
+        Shape: (n_samples, n_models), where each column corresponds to a model's predictions.
+    - n_sets (int, optional): 
+        Number of subsets to split the test data for independent optimizations. 
+        If `n_sets = 1`, no split is performed. Default is 1.
+    - max_iterations (int, optional): 
+        Maximum number of iterations for the hill-climbing ensemble selection per subset. 
+        Default is 50.
+    - verbose (bool, optional): 
+        If True, prints progress information such as the current iteration and selected models.
+        Default is True.
 
     Returns:
-    - array: Optimized and normalized weights based on the hill climbing and ensemble selection approach.
+    - numpy.ndarray: 
+        Normalized weights for each model based on their selection frequency. 
+        Shape: (n_models,), where each entry corresponds to a model's weight.
     """
-    # Falls n_sets > 1 ist, wird das Testset in mehrere Teilmengen aufgeteilt
+    # Determine the size of each subset if n_sets > 1
     set_size = len(Y_test_values) // n_sets
-    selected_combinations = []
-    model_count = {i: 0 for i in range(hat_Y_test.shape[1])}
+    selected_combinations = []  # List to store selected models across all subsets
+    model_count = {i: 0 for i in range(hat_Y_test.shape[1])}  # Count model selections
 
-    start_idx = 0
+    start_idx = 0  # Initialize start index for data splitting
 
+    # Loop over subsets of the test data
     for set_idx in range(n_sets):
         if verbose:
-            print(f"\nSet {set_idx+1} of {n_sets}")
+            print(f"\nProcessing Subset {set_idx + 1} of {n_sets}")
         
-        if set_idx == n_sets - 1:
+        # Define the end index for the current subset
+        if set_idx == n_sets - 1:  # Last subset includes remaining data points
             end_idx = len(Y_test_values)
         else:
             end_idx = start_idx + set_size
 
-        Y_test_set = Y_test_values[start_idx:end_idx]
-        selected_combination = []
+        Y_test_set = Y_test_values[start_idx:end_idx]  # Actual values for the subset
+        selected_combination = []  # Store selected models for this subset
 
+        # Perform hill-climbing ensemble selection for the current subset
         for iteration in range(1, max_iterations + 1):
+            # Print progress every 50 iterations if verbose
             if verbose and iteration % 50 == 0:
                 print(f"Iteration {iteration} / {max_iterations}")
 
-            best_loss = float('inf')
-            best_model_idx = None
+            best_loss = float('inf')  # Initialize the best loss as infinity
+            best_model_idx = None  # To track the index of the best model
 
-            # Füge schrittweise Modelle hinzu (auch doppelte zulässig)
+            # Evaluate adding each model to the current combination
             for model_idx in range(hat_Y_test.shape[1]):
+                # Compute the combined forecast for the current combination
                 current_combination = selected_combination + [model_idx]
-                combined_forecast = np.mean(hat_Y_test[start_idx:end_idx, current_combination], axis=1)
-                #current_loss = np.mean(np.abs(Y_test_set - combined_forecast))
-                current_loss = np.mean(np.abs(np.array(Y_test_set, dtype=float) - np.array(combined_forecast, dtype=float)))
+                combined_forecast = np.mean(
+                    hat_Y_test[start_idx:end_idx, current_combination], axis=1
+                )
+                
+                # Compute the Mean Absolute Error (MAE) for the current combination
+                current_loss = np.mean(
+                    np.abs(np.array(Y_test_set, dtype=float) - np.array(combined_forecast, dtype=float))
+                )
 
-                # Wähle die beste Kombination
+                # Update the best model if the current combination improves the loss
                 if current_loss < best_loss:
                     best_loss = current_loss
                     best_model_idx = model_idx
 
-            # Füge das beste Modell zur aktuellen Kombination hinzu
+            # Add the best-performing model to the combination
             if best_model_idx is not None:
                 selected_combination.append(best_model_idx)
-                model_count[best_model_idx] += 1
+                model_count[best_model_idx] += 1  # Increment the count of the selected model
 
-        # Speichere die beste Kombination aus diesem Set
+        # Store the selected model indices for the current subset
         selected_combinations.extend(selected_combination)
-        start_idx = end_idx
+        start_idx = end_idx  # Update start index for the next subset
 
-    # Bestimme die Häufigkeit jedes Modells und normalisiere die Gewichte
+    # Determine model selection frequency and normalize weights
     unique_combinations, counts = np.unique(selected_combinations, return_counts=True)
-    print(f"combination chosen: {unique_combinations}")
-    print(f"combination counts: {counts}")
+    print(f"Models selected: {unique_combinations}")
+    print(f"Selection counts: {counts}")
     
+    # Initialize weights and scale based on selection frequency
     scaled_weights = np.zeros(hat_Y_test.shape[1])
     scaled_weights[unique_combinations] = counts / len(selected_combinations)
 
     return scaled_weights
 
-
-
-def iteratively_qualify_and_remove_weaker_groups(aggregated_forecast, Y_test_values, verbosity = 0):
+def iteratively_qualify_and_remove_weaker_groups(aggregated_forecast, Y_test_values, verbosity=0):
     """
-    Iteratively qualifies and removes weaker groups by comparing the MAE of the current level
-    with the average MAE of the previous levels. Groups that don't meet the qualification criteria
-    are disqualified in later levels.
+    Iteratively qualifies and removes weaker groups by comparing the MAE (Mean Absolute Error) 
+    of the current level with the average MAE of the previous levels. Groups that exceed 
+    the qualification threshold are disqualified in later iterations.
 
     Parameters:
-    - aggregated_forecast (dict): Dictionary where each key is a group name and each value is a DataFrame 
-      containing columns 'date', 'pred', and 'total'.
-    - Y_test_values (np.array): Array of actual test values from the dataset, used to calculate MAE.
+    - aggregated_forecast (dict): 
+        A dictionary where each key represents a group name (a string) and each value 
+        is a pandas DataFrame containing the following columns:
+          - 'date': Date or time of the forecast.
+          - 'pred': Predicted values for the corresponding time periods.
+          - 'total': Actual values for the corresponding time periods.
+
+    - Y_test_values (np.array): 
+        An array of true test values (ground truth) used for evaluation of forecasts. 
+        This parameter is not explicitly used in this implementation but remains for compatibility.
+
+    - verbosity (int, optional, default=0): 
+        The level of output verbosity during execution:
+          - 0: Silent (no output).
+          - 4: Outputs detailed information about the qualification process, 
+               including group losses and disqualified groups.
 
     Returns:
-    - aggregated_forecast (dict): Updated dictionary where only the qualified groups remain.
+    - aggregated_forecast (dict): 
+        A filtered dictionary containing only the qualified groups. Disqualified groups 
+        (those with higher errors) are removed.
     """
-    # Berechne MAE für jede Gruppe und speichere sie zusammen mit dem Gruppennamen als Tupel
-    
+
+    # List to store group names along with their corresponding losses (MAE)
     all_selected_groups_with_losses = []
     for group_name, df in aggregated_forecast.items():
-        # Bereinige die DataFrame: Entferne Zeilen ohne 'pred' Werte (NA)
+        # Drop rows with missing predictions to ensure clean comparisons
         df_clean = df.dropna(subset=['pred'])
         
         if df_clean.empty:
-            mae = float('inf')  # Falls keine Vorhersagen vorhanden sind, setze einen hohen Fehler
+            mae = float('inf')  # Assign a high error if no predictions are available
         else:
-            # Berechne MAE zwischen 'pred' und den tatsächlichen Werten 'total'
+            # Extract predictions and actual values
             y_pred = df_clean['pred'].values
             y_true = df_clean['total'].values
-            mae = np.mean(np.abs(y_pred - y_true))
+            mae = np.mean(np.abs(y_pred - y_true))  # Calculate MAE
         
-        # Speichere Gruppennamen und Verlust als Tupel
+        # Append the group name and its loss as a tuple
         all_selected_groups_with_losses.append((group_name, mae))
 
-    # Bestimme das höchste Level (Anzahl der Gruppenebenen)
+    # Determine the maximum depth/level based on the group names
     max_level = max(len(group_name) for group_name, _ in all_selected_groups_with_losses)
 
-    # Iteriere über die Levels ab Level 2
+    # Iteratively qualify groups starting from level 2 (levels represent grouping hierarchies)
     for level in range(2, max_level + 1):
-        # Wähle Gruppen und Verluste des aktuellen Levels
-        current_level_groups_with_losses = [(g, loss) for g, loss in all_selected_groups_with_losses if len(g) == level]
+        # Filter groups at the current level
+        current_level_groups_with_losses = [
+            (g, loss) for g, loss in all_selected_groups_with_losses if len(g) == level
+        ]
 
         if not current_level_groups_with_losses:
-            continue  # Überspringe, wenn keine Gruppen im aktuellen Level vorhanden sind
+            continue  # Skip if no groups exist at the current level
 
-        # Berechne den Mittelwert der Verluste der qualifizierten Gruppen aus dem vorherigen Level
-        previous_level_losses = [loss for g, loss in all_selected_groups_with_losses if len(g) < level]
-
+        # Calculate the mean loss for all groups at previous levels
+        previous_level_losses = [
+            loss for g, loss in all_selected_groups_with_losses if len(g) < level
+        ]
         mean_previous_level_loss = np.mean(previous_level_losses)
-        if(verbosity >= 4):
+        
+        if verbosity >= 4:
             print(f"Mean loss for level <= {level}: {mean_previous_level_loss}")
 
-        # Qualifiziere Gruppen im aktuellen Level, die besser als der Mittelwert der aktuellen + vorherigen Level sind
-        disqualified_groups_with_losses = [(g, loss) for g, loss in current_level_groups_with_losses if loss > mean_previous_level_loss]
-        
+        # Disqualify groups whose loss exceeds the mean loss of previous levels
+        disqualified_groups_with_losses = [
+            (g, loss) for g, loss in current_level_groups_with_losses if loss > mean_previous_level_loss
+        ]
+
+        # Keep only the qualified groups
         all_selected_groups_with_losses = [
             (g, loss) for g, loss in all_selected_groups_with_losses 
             if g not in [group for group, _ in disqualified_groups_with_losses]
         ]
 
-        if(verbosity >= 4):
+        if verbosity >= 4:
             print(f"Level {level}: Qualified groups:")
             for group, loss in all_selected_groups_with_losses:
                 if len(group) <= level:
                     print(f"  Group: {group}, Loss: {loss}")
 
+        # Recalculate the mean loss for qualified groups across all levels up to the current level
+        mean_loss_qualified_groups = np.mean([
+            loss for g, loss in all_selected_groups_with_losses if len(g) <= level
+        ])
 
-        # Berechne den neuen Mittelwert aller qualifizierten Gruppen 
-        mean_loss_qualified_groups = np.mean(
-            [loss for g, loss in all_selected_groups_with_losses if len(g) <= level]
-        )
+        if verbosity >= 4:
+            print(f"New mean loss for qualified groups in level <= {level}: {mean_loss_qualified_groups}")
 
-        if(verbosity >= 4):
-            print(f"New Mean loss for only qualified groups in level <= {level}: {mean_loss_qualified_groups}")
-
-        # Disqualifiziere Gruppen aus vorherigen Levels, deren Verluste größer als der neue Mittelwert sind
+        # Remove groups from previous levels if their losses exceed the new mean loss
         for prev_level in range(1, level):
             to_remove = [
-                (g, loss) for g, loss in all_selected_groups_with_losses if len(g) <= prev_level and loss > mean_loss_qualified_groups
+                (g, loss) for g, loss in all_selected_groups_with_losses 
+                if len(g) <= prev_level and loss > mean_loss_qualified_groups
             ]
-            
-            # Entferne die ausgewählten Gruppen
-            all_selected_groups_with_losses = [tup for tup in all_selected_groups_with_losses if tup not in to_remove]
 
-            if to_remove:
-                print(f"Removed weaker groups from level {prev_level}: {to_remove} against the new mean {mean_loss_qualified_groups}")
+            # Remove disqualified groups
+            all_selected_groups_with_losses = [
+                tup for tup in all_selected_groups_with_losses if tup not in to_remove
+            ]
 
-    # Filtere das Dictionary und behalte nur die qualifizierten Gruppen bei
-    aggregated_forecast = {group: aggregated_forecast[group] for group, _ in all_selected_groups_with_losses}
+            if verbosity >= 4 and to_remove:
+                print(f"Removed weaker groups from level {prev_level}: {to_remove} "
+                      f"against the new mean {mean_loss_qualified_groups}")
+
+    # Filter the original dictionary to include only the qualified groups
+    aggregated_forecast = {
+        group: aggregated_forecast[group] for group, _ in all_selected_groups_with_losses
+    }
 
     return aggregated_forecast

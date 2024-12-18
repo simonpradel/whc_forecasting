@@ -34,7 +34,6 @@ def prepare_data(data, cutoff_date=None, fill_missing_rows=False):
 
     # Fill NA's with zeros
     if fill_missing_rows:
-        len_before = len(pandas_df)
         pandas_df = add_missing_rows(pandas_df, freq=data["freq"]).copy()  # Copy to ensure a new DataFrame is created
         #print(f"{len(pandas_df) - len_before} rows were added to the dataset")
         pandas_df['total'] = pandas_df['total'].fillna(0)
@@ -54,68 +53,84 @@ def prepare_data(data, cutoff_date=None, fill_missing_rows=False):
     return data
 
 
-
-
-
 def add_missing_rows(df, freq):
     """
-    Ergänzt fehlende Daten in einem DataFrame basierend auf der angegebenen Frequenz
-    und setzt die Werte der 'total'-Spalte für diese Zeitperioden auf 0.
+    Adds missing time periods to a DataFrame based on the specified frequency.
+    For missing periods, the 'total' column values are set to 0.
 
     Parameters:
-    - df (pd.DataFrame): Das zu ergänzende DataFrame, welches die Spalten 'ts_id', 'date' und 'total' enthält.
-    - freq (str): Die Frequenz der Zeitreihe. Beispiele: 'D' für täglich, 'M' für monatlich, 'Q' für vierteljährlich.
+    - df (pd.DataFrame): Input DataFrame containing the following columns:
+        - 'ts_id' (int/str): Identifier for each time series.
+        - 'date' (str/datetime): The date column representing the time periods.
+        - 'total' (numeric): The values corresponding to each time period.
+    - freq (str): Frequency of the time series. Examples include:
+        - 'D' for daily
+        - 'M' for monthly
+        - 'Q' for quarterly
 
     Returns:
-    - pd.DataFrame: Das ergänzte DataFrame mit fehlenden Zeitperioden.
+    - pd.DataFrame: A DataFrame with missing time periods added, where missing
+      periods have 'total' set to 0.
+
     """
     
-    # Sicherstellen, dass 'date' eine Datetime-Spalte ist
+    # Ensure 'date' column is a datetime object
     df['date'] = pd.to_datetime(df['date'])
 
-    # Sortiere nach ts_id und date
+    # Sort the DataFrame by 'ts_id' and 'date'
     df_sorted = df.sort_values(by=['ts_id', 'date']).reset_index(drop=True)
 
-    # Bestimme das Mindest- und Höchstdatum im DataFrame
+    # Determine the full date range for the specified frequency
     min_date = df_sorted['date'].min()
     max_date = df_sorted['date'].max()
-    print("date_range")
     date_range = pd.date_range(min_date, max_date, freq=freq)
-    print("date_range")
-    # Erstelle ein leeres DataFrame zum Sammeln der aktualisierten Daten
+
+    # Placeholder for new rows with missing dates
     updated_rows = []
 
-    # Schleife über jede ts_id und ergänze fehlende Zeitperioden
+    # Iterate over each time series group ('ts_id') and find missing dates
     for ts_id, df_ts in df_sorted.groupby('ts_id'):
-        # Finde fehlende Zeitperioden für diese ts_id
-        existing_dates = df_ts['date'].unique()
-        existing_dates = pd.to_datetime(existing_dates)  # Konvertiere zu DateTime-Objekten
+        existing_dates = pd.to_datetime(df_ts['date'].unique())
         missing_dates = date_range.difference(existing_dates)
 
         for date in missing_dates:
-            # Erstelle eine neue Zeile für diese Zeitperiode
-            new_row = df_ts.iloc[-1].copy()  # Kopiere die letzte vorhandene Zeile für diese ts_id
-            new_row['date'] = date  # Setze das Datum auf den fehlenden Zeitraum
-            new_row['total'] = 0  # Setze den total-Wert auf 0
-
-            # Füge die neue Zeile zur Sammlung hinzu
+            # Create a new row with 'total' set to 0 for the missing period
+            new_row = df_ts.iloc[-1].copy()  # Copy the last row to retain structure
+            new_row['date'] = date           # Replace the date with the missing period
+            new_row['total'] = 0             # Set 'total' to 0
             updated_rows.append(new_row)
 
-    # Füge die aktualisierten Zeilen zum ursprünglichen DataFrame hinzu
+    # Append new rows to the original DataFrame and return the result
     updated_df = pd.concat([df_sorted, pd.DataFrame(updated_rows)], ignore_index=True)
     
     return updated_df
 
 
-
 def prepare_dataframe(spark_df, target_column):
-    # Spark DataFrame in Pandas DataFrame umwandeln
+    """
+    Converts a Spark DataFrame into a clean Pandas DataFrame suitable for time series analysis.
+
+    Parameters:
+    - spark_df (pyspark.sql.DataFrame): Input Spark DataFrame containing columns like:
+        - 'Year' (str): Year in 4-digit format (e.g., '2024').
+        - 'Period' (str): Month abbreviation (e.g., 'JAN', 'FEB', etc.).
+        - Other categorical or grouping columns.
+    - target_column (str): The name of the column containing target values to forecast.
+        This column will be renamed to 'total'.
+
+    Returns:
+    - pd.DataFrame: A cleaned Pandas DataFrame with the following structure:
+        - 'date' (datetime): The last day of each corresponding month.
+        - 'total' (float): Target values renamed and converted to float.
+        - 'ts_id' (int): Unique identifier for each time series group.
+    """
+    # Convert Spark DataFrame to Pandas DataFrame
     pandas_df = spark_df.toPandas()
-    
-    # Schrägstriche in allen Feldern durch Unterstriche ersetzen
+
+    # Replace slashes in all fields with underscores
     pandas_df = pandas_df.replace(to_replace=r'/', value='_', regex=True)
 
-    # 'year' und 'month' Spalten bereinigen und konvertieren
+    # Clean and convert 'Year' and 'Period' columns
     pandas_df['Year'] = pandas_df['Year'].str.extract(r'(\d{4})')
     month_map = {
         "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04", "MAY": "05",
@@ -123,26 +138,23 @@ def prepare_dataframe(spark_df, target_column):
         "NOV": "11", "DEC": "12"
     }
     pandas_df['Period'] = pandas_df['Period'].str.strip().map(month_map)
-    
-    # Erstellen des letzten Tags eines Monats
+
+    # Create the 'date' column as the last day of each month
     pandas_df['date'] = pd.to_datetime(pandas_df['Year'] + '-' + pandas_df['Period'])
     pandas_df['date'] = pandas_df['date'] + pd.offsets.MonthEnd(0)
-    
-    # Zielspalte in float umwandeln
+
+    # Rename the target column to 'total' and convert to float
     pandas_df.rename(columns={target_column: 'total'}, inplace=True)
-    
-    # Unnötige Spalten droppen
+
+    # Drop unnecessary columns
     pandas_df = pandas_df.drop(columns=['Year', 'Period'])
-    
-    # Kategorische Spalten konvertieren
+
+    # Convert remaining columns (excluding 'date' and 'total') to categorical types
     columns_to_convert = pandas_df.columns[~pandas_df.columns.str.contains('date|total')]
     pandas_df[columns_to_convert] = pandas_df[columns_to_convert].astype('category')
-    
-    # Gruppenvariablen bestimmen und 'ts_id' erstellen
+
+    # Create a unique time series ID ('ts_id') based on grouping variables
     ts_vars = pandas_df.columns[~pandas_df.columns.str.contains('date|total|id')].tolist()
-    pandas_df['ts_id'] = pandas_df.groupby(ts_vars, observed =False ).ngroup()
-    
+    pandas_df['ts_id'] = pandas_df.groupby(ts_vars, observed=False).ngroup()
+
     return pandas_df
-
-
-

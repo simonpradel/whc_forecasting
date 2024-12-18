@@ -3,37 +3,50 @@ import warnings
 
 def count_files_in_folders(datasets, current_dir, check, max_files=None, return_datasets_below_threshold=False):
     """
-    Zählt die Anzahl der Dateien in jedem Dataset-Ordner und gibt optional eine Liste der Dataset-Namen zurück,
-    bei denen die Anzahl an Dateien unter dem gegebenen Schwellenwert max_files liegt.
+    Counts the number of files in each dataset folder and optionally returns a list of dataset names 
+    where the number of files is below the given threshold 'max_files'.
 
     Args:
-        datasets (list): Liste der Dataset-Namen.
-        base_dir (str): Basisverzeichnis, in dem die Dataset-Ordner liegen.
-        max_files (int, optional): Schwellenwert für die maximale Anzahl an Dateien pro Ordner.
-        return_datasets_below_threshold (bool, optional): Wenn True, gibt die Funktion eine Liste der Dataset-Namen
-                                                         zurück, bei denen die Dateianzahl unter max_files liegt.
+        datasets (list): A list of dataset names. Each dataset corresponds to a folder in the directory.
+        current_dir (str): The base directory where the dataset folders are located.
+        check (str): A subdirectory or specific folder within each dataset folder where files will be counted.
+        max_files (int, optional): The threshold for the maximum number of files allowed per dataset folder. 
+                                    If provided, datasets with fewer files than this threshold will be tracked.
+        return_datasets_below_threshold (bool, optional): If True, the function returns a list of dataset names
+                                                           where the number of files is less than 'max_files'.
 
     Returns:
-        dict: Ein Dictionary mit Dataset-Namen als Schlüsseln und der Anzahl an Dateien im jeweiligen Ordner.
-        list (optional): Eine Liste der Dataset-Namen, bei denen die Dateianzahl unter max_files liegt.
+        dict: A dictionary where the keys are dataset names, and the values are the number of files in each dataset folder.
+        list (optional): If 'return_datasets_below_threshold' is True, it returns a list of dataset names where the 
+                         number of files is below 'max_files'.
     """
+    
+    # Initialize a dictionary to store the number of files for each dataset
     file_counts = {}
+    
+    # List to keep track of datasets that have fewer files than 'max_files' (if specified)
     below_threshold_datasets = []
 
+    # Loop through each dataset in the provided list
     for dataset in datasets:
-        dataset_dir = os.path.join(current_dir, dataset, check)
+        dataset_dir = os.path.join(current_dir, dataset, check)  # Get the path to the dataset folder
+
         try:
-            # Zähle die Anzahl der Dateien im Verzeichnis
+            # Count the number of files in the directory
             file_count = len([f for f in os.listdir(dataset_dir) if os.path.isfile(os.path.join(dataset_dir, f))])
-            file_counts[dataset] = file_count
+            file_counts[dataset] = file_count  # Store the count for the current dataset
             
-            # Prüfe, ob die Anzahl der Dateien unter dem Schwellenwert liegt
+            # If a max_files threshold is provided, check if the file count is below the threshold
             if max_files is not None and file_count < max_files:
-                below_threshold_datasets.append(dataset)
+                below_threshold_datasets.append(dataset)  # Add to the list if file count is below threshold
                 
         except FileNotFoundError:
-            warnings.warn(f"Verzeichnis für Dataset '{dataset}' nicht gefunden.")
+            # Warning if the dataset folder does not exist
+            warnings.warn(f"Directory for dataset '{dataset}' not found.")
     
+    # If 'return_datasets_below_threshold' is True, return both the file counts and the list of datasets below threshold
     if return_datasets_below_threshold:
         return file_counts, below_threshold_datasets
+
+    # If not, return only the file counts
     return file_counts

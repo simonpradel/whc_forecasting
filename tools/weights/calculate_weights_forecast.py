@@ -1,26 +1,16 @@
-import csv
-import numpy as np
 import pickle
-import copy
-from itertools import combinations
-from scipy.optimize import differential_evolution
+import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
-from autogluon.timeseries import TimeSeriesPredictor, TimeSeriesDataFrame
 from tools.models.AutoGluon import train_autogluon_and_forecast 
 from tools.models.AutoTS import train_autots_and_forecast 
 from tools.models.AutoARIMA import train_AutoARIMA_and_forecast 
 from tools.models.AutoETS import train_AutoETS_and_forecast 
-from tools.transformations.transform_aggregated_data import *
-from autots import AutoTS
-from autots.models.model_list import model_lists
+from tools.transformations.transform_aggregated_data import transform_dict_to_long, transform_long_to_dict
 from tools.methods.get_function_args import get_function_args
 import os
 import time
 from datetime import datetime
-import shutil
-import sys
 
-import tensorflow as tf
 # TensorFlow Logging auf ERROR setzen, um alle nicht notwendigen Ausgaben zu vermeiden
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -59,11 +49,6 @@ def calculate_weights_forecast(train_dict, freq, n_splits=3, fold_length = 12, f
     top_level_series = train_dict[('dataset',)]
     tscv = TimeSeriesSplit(n_splits=n_splits, test_size=fold_length)
 
-    all_selected_groups = []
-    all_selected_group_losses = []
-    forecast_cache = {}
-    loss_cache = {}
-
     max_variable_combinations = max(len(key) for key in train_dict.keys() if isinstance(key, tuple))
     print(f"Maximal variable combinations: {max_variable_combinations}")
 
@@ -96,8 +81,6 @@ def calculate_weights_forecast(train_dict, freq, n_splits=3, fold_length = 12, f
         group_aggregated_forecast_dict = {}
         for level in range(1, max_variable_combinations + 1):
             print(f"\nProcessing level {level} / {max_variable_combinations}")
-            current_test_losses = []
-            current_groups = []
 
             current_level_groups = [k for k in train_dict.keys() if isinstance(k, tuple) and len(k) == level]
             print(current_level_groups)
@@ -114,9 +97,6 @@ def calculate_weights_forecast(train_dict, freq, n_splits=3, fold_length = 12, f
     end_time = time.time()
     elapsed_time = end_time - start_time
     hours, rem = divmod(elapsed_time, 3600)
-    minutes = rem // 60
-    elapsed_time_str = f"{int(hours)}:{int(minutes):02d} h"
-
     current_date = datetime.now().strftime("%Y-%m-%d")
     
     os.makedirs(save_path, exist_ok=True)
@@ -147,49 +127,113 @@ def calculate_weights_forecast(train_dict, freq, n_splits=3, fold_length = 12, f
 
 
 
-################################################################################################################################################################################################################
-############################################################################################### Find and Use Benachmark Model  ############################################################################################### 
-################################################################################################################################################################################################################
-
-
-# Mögliche Level:
-# '0' = alle Logs (Standard)
-# '1' = INFO Logs
-# '2' = WARN Logs
-# '3' = ERROR Logs (nur Fehler werden angezeigt)
-
-
-def find_best_model(train_df, freq, model = "AutoGluon", excludeModels = None, includeModels = None, test_period = None, enable_ensemble = True, eval_metric = "MAE", verbosity = 0, time_limit = 120 * 60 ):
+# Find and Use Benachmark Model  
+def find_best_model(train_df, freq, model="AutoGluon", excludeModels=None, includeModels=None, 
+                    test_period=None, enable_ensemble=True, eval_metric="MAE", verbosity=0, time_limit=120 * 60):
     """
-    Trainiert den Predictor und bestimmt das beste Modell basierend auf dem obersten Level.
+    Trains a predictor and determines the best-performing model for the provided dataset.
 
     Parameters:
-    train_df (pd.DataFrame): Trainingsdaten für das oberste Level.
-    freq (str): Frequenz der Daten, z.B. 'D' für täglich, 'W' für wöchentlich.
-    model_path (str): Pfad zum Speichern des Modells.
+    ----------
+    train_df (pd.DataFrame): 
+        A DataFrame containing the training data. It should include the following columns:
+        - "date": The date column for the time series.
+        - "ts_id": The time series ID column for identifying different time series.
+        - "total": The actual observed values.
+
+    freq (str): 
+        The frequency of the time series data. For example:
+        - 'D' for daily data
+        - 'W' for weekly data
+
+    model (str, optional): 
+        The name of the automated model training tool to use. Default is "AutoGluon".
+        Supported values: ["AutoGluon", "AutoTS"].
+
+    excludeModels (list of str, optional): 
+        A list of model names to exclude during training. Default is None.
+
+    includeModels (list of str, optional): 
+        A list of specific model names to include during training. Default is None.
+
+    test_period (int, optional): 
+        The number of periods to use as the test set for validation. Default is None.
+
+    enable_ensemble (bool, optional): 
+        Whether to enable ensemble model training. Default is True.
+
+    eval_metric (str, optional): 
+        The evaluation metric to optimize during model selection. Default is "MAE".
+        Example metrics: "RMSE", "MAPE", "MAE".
+
+    verbosity (int, optional): 
+        The verbosity level for model training outputs. Default is 0 (silent).
+
+    time_limit (int, optional): 
+        The maximum time limit (in seconds) allowed for training models. Default is 120 * 60 (2 hours).
 
     Returns:
-    str: Der Name des besten Modells.
-    TimeSeriesPredictor: Der trainierte Predictor.
+    -------
+    str:
+        The name of the best-performing model.
+
+    object:
+        The trained predictor object.
+
+    Notes:
+    -----
+    - The function currently supports AutoGluon and AutoTS for automated time series forecasting.
+    - If the specified model is not found, an error message will be printed, and no model will be returned.
     """
 
-    if(model == "AutoGluon"):
+    # Check which model to use for training
+    if model == "AutoGluon":
+        # Train the AutoGluon predictor and get the forecasts
+        Y_hat_df, best_model = train_autogluon_and_forecast(
+            train_df=train_df,
+            test_period=test_period,
+            freq=freq,
+            date_col="date",
+            id_col="ts_id",
+            actuals_col="total",
+            includeModels=includeModels,
+            excludeModels=excludeModels,
+            set_index=False,
+            enable_ensemble=enable_ensemble,
+            eval_metric=eval_metric,
+            verbosity=verbosity,
+            time_limit=time_limit
+        )
 
-        Y_hat_df, best_model = train_autogluon_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", includeModels=includeModels, excludeModels=excludeModels, set_index = False,  enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity, time_limit = time_limit)
+    elif model == "AutoTS":
+        # Train the AutoTS predictor and get the forecasts
+        Y_hat_df, best_model = train_autots_and_forecast(
+            train_df=train_df,
+            test_period=test_period,
+            freq=freq,
+            date_col="date",
+            id_col="ts_id",
+            actuals_col="total",
+            includeModels=includeModels,
+            excludeModels=excludeModels,
+            set_index=False,
+            enable_ensemble=enable_ensemble,
+            eval_metric=eval_metric,
+            verbosity=verbosity,
+            time_limit=time_limit
+        )
 
-    elif (model == "AutoTS"):
-        
-        Y_hat_df, best_model = train_autots_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", includeModels=includeModels, excludeModels=excludeModels, set_index = False, 
-        enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity, time_limit = time_limit)
+    else:
+        # Handle unsupported model names
+        print(f"Error: The specified model '{model}' is not supported. Supported models are 'AutoGluon' and 'AutoTS'.")
+        return None
 
-    else: 
-        print(f"The Model was not found")
-
+    # Return the name of the best model
     return best_model
 
 
 
-# Funktion zur Bewertung einer Gruppe
+
 def evaluate_group(train_dict, tscv, freq, model, best_model, n_splits, group_key = None, enable_ensemble = True, eval_metric = "MAE", verbosity = 0, time_limit = 120 * 60):
     """
     Evaluates a specific group of time series data by performing cross-validation.
@@ -219,14 +263,10 @@ def evaluate_group(train_dict, tscv, freq, model, best_model, n_splits, group_ke
     top_level_series = train_dict[('dataset',)]
 
     if method == "level":
-        fold_losses = []
         group_aggregated_forecast = {
             key: train_dict[key].groupby('date', as_index=False)['total'].sum() for key in train_dict
         }   
     elif method == "global":
-        # Kopiere die Schlüssel von train_dict und erstelle für jeden Key einen DataFrame mit gruppierten Daten
-        fold_losses = {key: [] for key in train_dict}
-        # Für jedes Key wird ein DataFrame erstellt, in dem die Daten nach 'date' gruppiert und 'total' summiert werden
         group_aggregated_forecast = {
             key: train_dict[key].groupby('date', as_index=False)['total'].sum() for key in train_dict
         }
@@ -236,7 +276,6 @@ def evaluate_group(train_dict, tscv, freq, model, best_model, n_splits, group_ke
         train_df_top_level = top_level_series.iloc[train_index]
         train_dates = train_df_top_level['date']
         test_dates = top_level_series['date'].iloc[test_index]
-        Y_test = top_level_series['total'].iloc[test_index]
 
         if(method == "level"):
             train_df = train_dict[group_key]
@@ -247,16 +286,13 @@ def evaluate_group(train_dict, tscv, freq, model, best_model, n_splits, group_ke
         train_df_filtered = train_df[train_df['date'] <= max(train_dates)]
         forecast = train_with_chosen_model(train_df_filtered, len(test_dates), freq=freq, best_model=best_model, model=model, method = method, mapping = mapping, enable_ensemble = enable_ensemble , eval_metric = eval_metric, verbosity = verbosity, time_limit = time_limit)
         
-
-
         if method == "global":
-            # Füge den Forecast zu jeder Zeitreihe hinzu
             for key in group_aggregated_forecast:
                 if key in forecast:
                     group_aggregated_forecast[key].loc[group_aggregated_forecast[key]['date'].isin(test_dates), 'pred'] = forecast[key]
                      
         elif method == "level":
-            print(f"level Forecast")
+            print("level Forecast")
             group_aggregated_forecast[group_key].loc[group_aggregated_forecast[group_key]['date'].isin(test_dates), 'pred'] = forecast
     
     if verbosity > 3:
@@ -271,81 +307,154 @@ def evaluate_group(train_dict, tscv, freq, model, best_model, n_splits, group_ke
     
         
 
-def train_with_chosen_model(train_df, test_period, freq, best_model=None, model = "AutoGluon", method = "level", mapping = None, enable_ensemble = True, eval_metric = "MAE", verbosity = 0, time_limit = 120 * 60):
+def train_with_chosen_model(train_df, test_period, freq, best_model=None, model="AutoGluon", method="level", 
+                            mapping=None, enable_ensemble=True, eval_metric="MAE", verbosity=0, time_limit=120 * 60):
     """
-    Verwendet das beste Modell für die unteren Ebenen, um Prognosen zu erstellen.
+    Trains a specified time series forecasting model and generates forecasts for future periods.
 
     Parameters:
-    train_df (pd.DataFrame): Trainingsdaten für die unteren Ebenen.
-    test_period (int): Anzahl der Zukunftsperioden für die Prognose.
-    freq (str): Frequenz der Daten, z.B. 'D' für täglich, 'W' für wöchentlich.
-    model_path (str): Pfad zum Speichern des Modells.
-    best_model (str): Name des besten Modells.
+    -----------
+    train_df (pd.DataFrame): 
+        A DataFrame containing the training data with the following required columns:
+        - 'date': The timestamp column.
+        - 'ts_id': Identifier for time series (e.g., group or level ID).
+        - 'total': The actual observed values.
+
+    test_period (int): 
+        The number of future periods to forecast.
+
+    freq (str): 
+        The frequency of the data, e.g., 'D' for daily, 'W' for weekly.
+
+    best_model (str, optional): 
+        The name of a specific model to be included during training (e.g., from previous results).
+        Default is None, which lets the method automatically select the best model.
+
+    model (str, optional): 
+        The time series model to be used for training and forecasting. Options include:
+        - "AutoGluon"
+        - "AutoTS"
+        - "AutoETS"
+        - "AutoARIMA"
+        Default is "AutoGluon".
+
+    method (str, optional): 
+        Specifies the aggregation method:
+        - "level": Forecasts are generated and aggregated at a single level.
+        - "hierarchical": Forecasts are generated and aggregated hierarchically using `mapping`.
+        Default is "level".
+
+    mapping (dict, optional): 
+        A dictionary used for hierarchical aggregation. Keys should represent higher-level groups,
+        and values should contain lower-level identifiers.
+
+    enable_ensemble (bool, optional): 
+        Whether to enable ensemble models during forecasting.
+        Default is True.
+
+    eval_metric (str, optional): 
+        The evaluation metric to be used for model training and selection (e.g., "MAE").
+        Default is "MAE".
+
+    verbosity (int, optional): 
+        Verbosity level for model training logs. Higher values show more detailed output.
+        Default is 0 (minimal logs).
+
+    time_limit (int, optional): 
+        Time limit in seconds for training the models.
+        Default is 120 * 60 (2 hours).
 
     Returns:
-    np.array: Prognosewerte für die Zukunftsperioden.
+    --------
+    np.array or dict: 
+        - If method="level": Returns a numpy array with forecast values aggregated by date.
+        - If method="hierarchical": Returns a dictionary of numpy arrays, grouped by keys in `mapping`.
     """
-
-
-    if(model == "AutoGluon"):
-        # Umbenennen der Spalten, falls erforderlich
-        print("current Model")
-        print(model)   
-        print(best_model) 
-        print()
+    
+    # AutoGluon Model Selection
+    if model == "AutoGluon":
+        print(f"Current Model: {model}")
+        print(f"Using best_model: {best_model}")
+        
+        # Forecasting at the chosen level
         if method == "level":
-            Y_hat_df, best_model = train_autogluon_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", includeModels=best_model, excludeModels=None, set_index = False, time_limit = time_limit)
-            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy() 
-        else: 
-            Y_hat_df, best_model = train_autogluon_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", includeModels=best_model, excludeModels=None, set_index = False, time_limit = time_limit)
-            forecast_values = transform_long_to_dict(df = Y_hat_df, mapping = mapping, id_col = 'ts_id', date_col = 'date', actuals_col = "pred") 
-
-            # Iteriere über das Dictionary und gruppiere jeden DataFrame nach 'date' und summiere die Ergebnisse auf
+            Y_hat_df, best_model = train_autogluon_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                includeModels=best_model, excludeModels=None, set_index=False, time_limit=time_limit
+            )
+            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy()
+        else:
+            Y_hat_df, best_model = train_autogluon_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                includeModels=best_model, excludeModels=None, set_index=False, time_limit=time_limit
+            )
+            forecast_values = transform_long_to_dict(
+                df=Y_hat_df, mapping=mapping, id_col='ts_id', date_col='date', actuals_col="pred"
+            )
+            # Group each DataFrame in the dictionary by 'date' and sum predictions
             for key, df in forecast_values.items():
-                # Gruppiere nach 'date' und summiere die anderen Spalten auf
                 forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy()
 
-    elif(model == "AutoTS"):
+    # AutoTS Model Selection
+    elif model == "AutoTS":
         if method == "level":
-            Y_hat_df, best_model = train_autots_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", includeModels=best_model, excludeModels=None, set_index = False, time_limit = time_limit, 
-                                                             enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity)
-            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy() 
-        else: 
-            Y_hat_df, best_model = train_autots_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", includeModels=best_model, excludeModels=None, set_index = False, time_limit = time_limit, 
-                                                             enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity)
-            forecast_values = transform_long_to_dict(df = Y_hat_df, mapping = mapping, id_col = 'ts_id', date_col = 'date', actuals_col = "pred") 
-            
-            # Iteriere über das Dictionary und gruppiere jeden DataFrame nach 'date' und summiere die Ergebnisse auf
+            Y_hat_df, best_model = train_autots_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                includeModels=best_model, excludeModels=None, set_index=False, time_limit=time_limit,
+                enable_ensemble=enable_ensemble, eval_metric=eval_metric, verbosity=verbosity
+            )
+            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy()
+        else:
+            Y_hat_df, best_model = train_autots_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                includeModels=best_model, excludeModels=None, set_index=False, time_limit=time_limit,
+                enable_ensemble=enable_ensemble, eval_metric=eval_metric, verbosity=verbosity
+            )
+            forecast_values = transform_long_to_dict(
+                df=Y_hat_df, mapping=mapping, id_col='ts_id', date_col='date', actuals_col="pred"
+            )
             for key, df in forecast_values.items():
-                # Gruppiere nach 'date' und summiere die anderen Spalten auf
-                forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy() 
+                forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy()
 
-    elif(model == "AutoETS"):
+    # AutoETS Model Selection
+    elif model == "AutoETS":
         if method == "level":
-            Y_hat_df, best_model = train_AutoETS_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", set_index = False, enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity)
-            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy() 
-            #print(forecast_values)
-        else: 
-            Y_hat_df, best_model = train_AutoETS_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", set_index = False, enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity)
-            forecast_values = transform_long_to_dict(df = Y_hat_df, mapping = mapping, id_col = 'ts_id', date_col = 'date', actuals_col = "pred") 
-            # Iteriere über das Dictionary und gruppiere jeden DataFrame nach 'date' und summiere die Ergebnisse auf
+            Y_hat_df, best_model = train_AutoETS_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                set_index=False, enable_ensemble=enable_ensemble, eval_metric=eval_metric, verbosity=verbosity
+            )
+            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy()
+        else:
+            Y_hat_df, best_model = train_AutoETS_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                set_index=False, enable_ensemble=enable_ensemble, eval_metric=eval_metric, verbosity=verbosity
+            )
+            forecast_values = transform_long_to_dict(
+                df=Y_hat_df, mapping=mapping, id_col='ts_id', date_col='date', actuals_col="pred"
+            )
             for key, df in forecast_values.items():
-                # Gruppiere nach 'date' und summiere die anderen Spalten auf
-                forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy() 
+                forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy()
 
-    elif(model == "AutoARIMA"):
+    # AutoARIMA Model Selection
+    elif model == "AutoARIMA":
         if method == "level":
-            Y_hat_df, best_model = train_AutoARIMA_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", set_index = False, enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity)
-            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy() 
-        else: 
-            Y_hat_df, best_model = train_AutoARIMA_and_forecast(train_df, test_period, freq, date_col = "date", id_col = "ts_id", actuals_col = "total", set_index = False, enable_ensemble = enable_ensemble, eval_metric = eval_metric, verbosity = verbosity)
-            forecast_values = transform_long_to_dict(df = Y_hat_df, mapping = mapping, id_col = 'ts_id', date_col = 'date', actuals_col = "pred") 
-            
-            # Iteriere über das Dictionary und gruppiere jeden DataFrame nach 'date' und summiere die Ergebnisse auf
+            Y_hat_df, best_model = train_AutoARIMA_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                set_index=False, enable_ensemble=enable_ensemble, eval_metric=eval_metric, verbosity=verbosity
+            )
+            forecast_values = Y_hat_df.groupby('date')['pred'].sum().to_numpy()
+        else:
+            Y_hat_df, best_model = train_AutoARIMA_and_forecast(
+                train_df, test_period, freq, date_col="date", id_col="ts_id", actuals_col="total",
+                set_index=False, enable_ensemble=enable_ensemble, eval_metric=eval_metric, verbosity=verbosity
+            )
+            forecast_values = transform_long_to_dict(
+                df=Y_hat_df, mapping=mapping, id_col='ts_id', date_col='date', actuals_col="pred"
+            )
             for key, df in forecast_values.items():
-                # Gruppiere nach 'date' und summiere die anderen Spalten auf
-                forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy() 
-    else: 
-        print(f"The Model was not found")
-        
+                forecast_values[key] = df.groupby('date')['pred'].sum().to_numpy()
+    else:
+        print("The specified model was not found. Please choose a valid model.")
+        return None
+
     return forecast_values
